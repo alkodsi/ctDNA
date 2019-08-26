@@ -283,7 +283,8 @@ for ( rowMap <- iterCSV(outBamArrayCSVmerged) ) {
      var4 = targetsIL.out1,
      array1 = contamByPatient(patient),
      array2 = segsByPatient(patient),
-     script = s"$java8 -jar $gatk FilterMutectCalls -R @var3@ -V @var1@  -O @out1@ --stats @var1@.stats --filtering-stats @out2@  --max-events-in-region 5 --min-median-read-position 20 -L @var4@ -ip 300 -ob-priors @var2@ " +
+     script = s"$java8 -jar $gatk FilterMutectCalls -R @var3@ -V @var1@  -O @out1@ --stats @var1@.stats --filtering-stats @out2@ " +
+               " --max-events-in-region 10 --min-median-read-position 15 -L @var4@ -ip 300 -ob-priors @var2@ " +
              // """ $( paste -d ' ' <(getarrayfiles array1)  | sed 's,^, --contamination-table ,' | tr -d '\\\n' ) """ +
               """ $( paste -d ' ' <(getarrayfiles array2)  | sed 's,^, --tumor-segmentation ,' | tr -d '\\\n' ) """)
 // -ob-priors @var2@

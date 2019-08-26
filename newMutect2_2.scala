@@ -18,10 +18,11 @@ object ctdna{
   val targets = INPUT(path = "/mnt/storage1/rawdata/ctDNA/metadata/targets.bed")
   val exac = INPUT(path = "/mnt/storage1/rawdata/resources/hg38/small_exac_common_3.hg38.vcf.gz")
   val hg38tohg19chain = INPUT(path = "/mnt/storage1/rawdata/resources/chains/hg38ToHg19.over.chain")
-  
+  val hg38reference = INPUT(path = "/mnt/storage1/rawdata/resources/hg38/Homo_sapiens_assembly38.fasta")
+ 
   val picard = "/mnt/storage1/tools/picard/picard-2.18.26.jar"
   val fgbio = "/mnt/storage1/tools/fgbio/fgbio-0.7.0.jar"
-  val gatk = "/mnt/storage1/tools/gatk/gatk-4.1.2.0/gatk-package-4.1.2.0-local.jar"
+  val gatk = "/mnt/storage1/tools/gatk/gatk-4.1.3.0/gatk-package-4.1.3.0-local.jar"
   val java8 = "/usr/lib/jvm/java-8-openjdk-amd64/jre/bin/java"
   val annovar = "/mnt/storage1/tools/Annovar/annovar/"
   val annovardb = "/mnt/storage1/tools/Annovar/annovar/humandb/"
@@ -49,6 +50,11 @@ object ctdna{
   exachg19._filename("out1","Exac_hg19.vcf.gz")
   exachg19._filename("out2","rejected.vcf.gz")
   
+  val hg38Image = BashEvaluate(var1 = hg38reference,
+        script = s"$java8 -jar $gatk BwaMemIndexImageCreator -I @var1@ -O @out1@")
+  hg38Image._filename("out1","referencehg38.fasta.img")
+
+
   val listTumors = CSVDplyr(csv1 = list,
        function1 = """mutate(Patient = sapply(strsplit(Key,"_"),function(x)paste(x[2],x[3],sep="_")))""",
        function2 = """filter(!grepl("WB",Key))""",
@@ -219,6 +225,7 @@ val varsAnnot             = NamedMap[Annovar]("varsAnnot")
 val varsAnnotCSV          = NamedMap[BashEvaluate]("varsAnnotCSV")
 val varsAnnotCSVFixed     = NamedMap[CSVDplyr]("varsAnnotCSVFixed")
 val varsPassOut           = NamedMap[Any]("varsPassOut")
+val varsFilteredAlignments = NamedMap[BashEvaluate]("varsFilteredAlignments")
 
 for ( rowMap <- iterCSV(outBamArrayCSVmerged) ) { 
   val patient = rowMap("Key")
@@ -262,12 +269,21 @@ for ( rowMap <- iterCSV(outBamArrayCSVmerged) ) {
      var4 = targetsIL.out1,
      array1 = contamByPatient(patient),
      array2 = segsByPatient(patient),
-     script = s"$java8 -jar $gatk FilterMutectCalls -R @var3@ -V @var1@  -O @out1@ --stats @var1@.stats --filtering-stats @out2@ --max-events-in-region 10 --min-median-read-position 15 -L @var4@ " +
-              //""" $( paste -d ' ' <(getarrayfiles array1)  | sed 's,^, --contamination-table ,' | tr -d '\\\n' ) """ +
+     script = s"$java8 -jar $gatk FilterMutectCalls -R @var3@ -V @var1@  -O @out1@ --stats @var1@.stats --filtering-stats @out2@ " +
+               " --max-events-in-region 10 --min-median-read-position 15 -L @var4@ -ip 300 -ob-priors @var2@ " +
+             // """ $( paste -d ' ' <(getarrayfiles array1)  | sed 's,^, --contamination-table ,' | tr -d '\\\n' ) """ +
               """ $( paste -d ' ' <(getarrayfiles array2)  | sed 's,^, --tumor-segmentation ,' | tr -d '\\\n' ) """)
 // -ob-priors @var2@
   varsFiltered(patient)._filename("out1", patient + "_filteredVariants.vcf.gz")
   varsFiltered(patient)._filename("out2", patient + "_filteringStats.csv")
+
+  varsFilteredAlignments(patient) = BashEvaluate(var1 = varsFiltered(patient).out1,
+     var2 = reference,
+     var3 = hg38Image.out1,
+     array1 = BamsByPatient(patient),
+     script = s"$java8 -jar $gatk FilterAlignmentArtifacts -R @var2@ -V @var1@ --bwa-mem-index-image @var3@ -O @out1@ " +
+              """ $( paste -d ' ' <(getarrayfiles array1)  | sed 's,^, -I ,' | tr -d '\\\n' ) """)
+   varsFilteredAlignments(patient)._filename("out1", patient + "_alignFiltered.vcf.gz")
 
   varsPass(patient) = BashEvaluate(var1 = varsFiltered(patient).out1,
        script = s"$java8 -jar $gatk SelectVariants --exclude-filtered -V @var1@ -O @out1@")
@@ -283,6 +299,7 @@ for ( rowMap <- iterCSV(outBamArrayCSVmerged) ) {
             protocol = "refGene,avsnp147,cosmic68,dbnsfp30a,icgc21",
             operation = "g,f,f,f,f")
 
+ if(patient != "CHIC_143"){
   varsAnnotCSV(patient) = BashEvaluate(var1 = reference,
             var2 = varsAnnot(patient).vcfOut,
             param1 = gatk,
@@ -297,7 +314,7 @@ for ( rowMap <- iterCSV(outBamArrayCSVmerged) ) {
                     -F MutationTaster_score -F MutationTaster_pred -F MutationAssessor_score -F MutationAssessor_pred \
                     -F CADD_phred -F DANN_score -GF AD -GF DP -GF AF -GF F1R2 -GF F2R1 -GF PGT -GF PID 
             """)
- if(patient != "CHIC_143"){
+
   varsAnnotCSVFixed(patient) = CSVDplyr(csv1 = varsAnnotCSV(patient).out1,
      script = """
               library(purrr)
