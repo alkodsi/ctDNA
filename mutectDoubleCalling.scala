@@ -1,6 +1,5 @@
 #!/usr/bin/env anduril
 //$OPT --threads 20
-//$OPT -d /mnt/storage2/work/amjad/ctdna/result_newMutectAll
 
 import anduril.builtin._
 import anduril.tools._
@@ -18,10 +17,11 @@ object ctdna{
   val targets = INPUT(path = "/mnt/storage1/rawdata/ctDNA/metadata/targets.bed")
   val exac = INPUT(path = "/mnt/storage1/rawdata/resources/hg38/small_exac_common_3.hg38.vcf.gz")
   val hg38tohg19chain = INPUT(path = "/mnt/storage1/rawdata/resources/chains/hg38ToHg19.over.chain")
-  
+  val hg38reference = INPUT(path = "/mnt/storage1/rawdata/resources/hg38/Homo_sapiens_assembly38.fasta")
+
   val picard = "/mnt/storage1/tools/picard/picard-2.18.26.jar"
   val fgbio = "/mnt/storage1/tools/fgbio/fgbio-0.7.0.jar"
-  val gatk = "/mnt/storage1/tools/gatk/gatk-4.1.2.0/gatk-package-4.1.2.0-local.jar"
+  val gatk = "/mnt/storage1/tools/gatk/gatk-4.1.3.0/gatk-package-4.1.3.0-local.jar"
   val java8 = "/usr/lib/jvm/java-8-openjdk-amd64/jre/bin/java"
   val annovar = "/mnt/storage1/tools/Annovar/annovar/"
   val annovardb = "/mnt/storage1/tools/Annovar/annovar/humandb/"
@@ -49,6 +49,10 @@ object ctdna{
   exachg19._filename("out1","Exac_hg19.vcf.gz")
   exachg19._filename("out2","rejected.vcf.gz")
   
+  val hg38Image = BashEvaluate(var1 = hg38reference,
+        script = s"$java8 -jar $gatk BwaMemIndexImageCreator -I @var1@ -O @out1@")
+  hg38Image._filename("out1","referencehg38.fasta.img")
+
   val listTumors = CSVDplyr(csv1 = list,
        function1 = """mutate(Patient = sapply(strsplit(Key,"_"),function(x)paste(x[2],x[3],sep="_")))""",
        function2 = """filter(!grepl("WB",Key))""",
@@ -66,8 +70,8 @@ object ctdna{
         function2 = """filter(!is.na(KeyNormal))""")
   
   val listMatchedSelSamples = CSVDplyr(csv1 = listMatched,
-     function1 = """filter(grepl("_0$",KeyTumor) | 
-                    (Patient %in% c("CHIC_52") & grepl("FFPE",KeyTumor)) | 
+     function1 = """filter(!Patient %in% c("CHIC_52","CHIC_12","CHIC_15","CHIC_16","CHIC_28","CHIC_29","CHIC_38","CHIC_39","CHIC_42","CHIC_49","CHIC_73","CHIC_91","CHIC_94","CHIC_99") & grepl("_0$",KeyTumor) | 
+                    (Patient %in% c("CHIC_52","CHIC_12","CHIC_15","CHIC_16","CHIC_28","CHIC_29","CHIC_38","CHIC_39","CHIC_42","CHIC_49","CHIC_73","CHIC_91","CHIC_94","CHIC_99") & grepl("FFPE",KeyTumor)) | 
                     (Patient %in% c("CHIC_15","CHIC_32") & grepl("_1$", KeyTumor)) |
                     (Patient %in% c("CHIC_2","CHIC_27","CHIC_45") & grepl("_3$", KeyTumor)) |
                     (!Patient %in% c("CHIC_2","CHIC_27","CHIC_45") & grepl("_2$", KeyTumor)))""")
@@ -223,18 +227,19 @@ val outBamArrayCSVmerged = CSVDplyr(csv1 = outBamArrayCSV,
    annotate variants
 */
 
-val F1R2Model             = NamedMap[BashEvaluate]("F1R2Model")
-val BamsByPatient         = NamedMap[CSV2Array]("BamsByPatient")
-val contamByPatient       = NamedMap[CSV2Array]("contamByPatient")
-val segsByPatient         = NamedMap[CSV2Array]("segsByPatient")
-val normalControl         = NamedMap[INPUT]("normalControl")
-val vars                  = NamedMap[BashEvaluate]("vars")
-val varsFiltered          = NamedMap[BashEvaluate]("varsFiltered")
-val varsPass              = NamedMap[BashEvaluate]("varsPass")
-val varsAnnot             = NamedMap[Annovar]("varsAnnot")
-val varsAnnotCSV          = NamedMap[BashEvaluate]("varsAnnotCSV")
-val varsAnnotCSVFixed     = NamedMap[CSVDplyr]("varsAnnotCSVFixed")
-val varsPassOut           = NamedMap[Any]("varsPassOut")
+val F1R2Model              = NamedMap[BashEvaluate]("F1R2Model")
+val BamsByPatient          = NamedMap[CSV2Array]("BamsByPatient")
+val contamByPatient        = NamedMap[CSV2Array]("contamByPatient")
+val segsByPatient          = NamedMap[CSV2Array]("segsByPatient")
+val normalControl          = NamedMap[INPUT]("normalControl")
+val vars                   = NamedMap[BashEvaluate]("vars")
+val varsFiltered           = NamedMap[BashEvaluate]("varsFiltered")
+val varsPass               = NamedMap[BashEvaluate]("varsPass")
+val varsAnnot              = NamedMap[Annovar]("varsAnnot")
+val varsAnnotCSV           = NamedMap[BashEvaluate]("varsAnnotCSV")
+val varsAnnotCSVFixed      = NamedMap[CSVDplyr]("varsAnnotCSVFixed")
+val varsPassOut            = NamedMap[Any]("varsPassOut")
+val varsFilteredAlignments = NamedMap[BashEvaluate]("varsFilteredAlignments")
 
 for ( rowMap <- iterCSV(outBamArrayCSVmerged) ) { 
   val patient = rowMap("Key")
@@ -278,18 +283,29 @@ for ( rowMap <- iterCSV(outBamArrayCSVmerged) ) {
      var4 = targetsIL.out1,
      array1 = contamByPatient(patient),
      array2 = segsByPatient(patient),
-     script = s"$java8 -jar $gatk FilterMutectCalls -R @var3@ -V @var1@  -O @out1@ --stats @var1@.stats --filtering-stats @out2@ --max-events-in-region 10 --min-median-read-position 15 -L @var4@ " +
-              //""" $( paste -d ' ' <(getarrayfiles array1)  | sed 's,^, --contamination-table ,' | tr -d '\\\n' ) """ +
+     script = s"$java8 -jar $gatk FilterMutectCalls -R @var3@ -V @var1@  -O @out1@ --stats @var1@.stats --filtering-stats @out2@  --max-events-in-region 5 --min-median-read-position 20 -L @var4@ -ip 300 -ob-priors @var2@ " +
+             // """ $( paste -d ' ' <(getarrayfiles array1)  | sed 's,^, --contamination-table ,' | tr -d '\\\n' ) """ +
               """ $( paste -d ' ' <(getarrayfiles array2)  | sed 's,^, --tumor-segmentation ,' | tr -d '\\\n' ) """)
 // -ob-priors @var2@
   varsFiltered(patient)._filename("out1", patient + "_filteredVariants.vcf.gz")
   varsFiltered(patient)._filename("out2", patient + "_filteringStats.csv")
 
-  varsPass(patient) = BashEvaluate(var1 = varsFiltered(patient).out1,
-       script = s"$java8 -jar $gatk SelectVariants --exclude-filtered -V @var1@ -O @out1@")
+  varsFilteredAlignments(patient) = BashEvaluate(var1 = varsFiltered(patient).out1,
+     var2 = reference,
+     var3 = hg38Image.out1,
+     array1 = BamsByPatient(patient),
+     script = s"$java8 -jar $gatk FilterAlignmentArtifacts -R @var2@ -V @var1@ --bwa-mem-index-image @var3@ -O @out1@ " +
+              """ $( paste -d ' ' <(getarrayfiles array1)  | sed 's,^, -I ,' | tr -d '\\\n' ) """)
+   varsFilteredAlignments(patient)._filename("out1", patient + "_alignFiltered.vcf.gz")
+
+  varsPass(patient) = BashEvaluate(var1 = varsFilteredAlignments(patient).out1,
+       var2 = targetsIL.out1,
+       script = s"$java8 -jar $gatk SelectVariants --exclude-filtered -L @var2@ -V @var1@ -O @out1@")
   varsPass(patient)._filename("out1", patient + "_passed.vcf.gz")
 
   varsPassOut(patient) = varsPass(patient).out1
+
+
 
   varsAnnot(patient) = Annovar(vcfIn = varsPass(patient).out1,
             annovarPath = annovar,
@@ -298,6 +314,8 @@ for ( rowMap <- iterCSV(outBamArrayCSVmerged) ) {
             inputType = "vcf",
             protocol = "refGene,avsnp147,cosmic68,dbnsfp30a,icgc21",
             operation = "g,f,f,f,f")
+
+ if(patient != "CHIC_143"){
 
   varsAnnotCSV(patient) = BashEvaluate(var1 = reference,
             var2 = varsAnnot(patient).vcfOut,
@@ -313,7 +331,7 @@ for ( rowMap <- iterCSV(outBamArrayCSVmerged) ) {
                     -F MutationTaster_score -F MutationTaster_pred -F MutationAssessor_score -F MutationAssessor_pred \
                     -F CADD_phred -F DANN_score -GF AD -GF DP -GF AF -GF F1R2 -GF F2R1 -GF PGT -GF PID 
             """)
- if(patient != "CHIC_143"){
+
   varsAnnotCSVFixed(patient) = CSVDplyr(csv1 = varsAnnotCSV(patient).out1,
      script = """
               library(purrr)
@@ -351,60 +369,5 @@ val allVarsEasyFormat = CSVDplyr(csv1 = allVarsFixedFilIndels,
      function1 = """select(Patient, CHROM, POS, REF, ALT, Func.refGene, Gene.refGene,ExonicFunc.refGene, ends_with("AD"))""")
 
 val allVarsExcel = CSV2Excel(csv = allVarsFixedFilIndels)
-
-
-// Estimate the background
-// --------------------------------------------
-
-/*
-val oneVCF = BashEvaluate(var1 = reference,
-     array1 = varsPassOut,
-     script = s"$java8 -jar $gatk3 -T CombineVariants -R @var1@ -o @out1@ -genotypeMergeOptions UNIQUIFY " +
-     """ $( paste -d ' ' <(getarraykeys array1) <(getarrayfiles array1)  | sed 's,^, --variant:,' | tr -d '\\\n' ) """)
-oneVCF._filename("out1","variants.vcf")   
-*/
-
-val background = NamedMap[BashEvaluate]("background")
-val bamIn = NamedMap[INPUT]("bamIn")
-val backgroundCSV = NamedMap[BashEvaluate]("backgroundCSV")
-val backgroundCSVFixed = NamedMap[CSVDplyr]("backgroundCSVFixed")
-
-for ( rowMap <- iterCSV(list) ) { 
-  
-  val sample = rowMap("Key")
-  bamIn(sample) = INPUT(path = rowMap("File"))
-
-  background(sample) = BashEvaluate(
-        var1 = bamIn(sample),
-        var2 = reference,
-        var3 = targetsIL.out1,
-        script = s"$java8 -jar $gatk Mutect2 -R @var2@ -I @var1@ -O @out1@ --max-reads-per-alignment-start 0 -L @var3@ -ERC BP_RESOLUTION")
-  background(sample)._filename("out1", sample + "_background.vcf.gz")
- 
-  backgroundCSV(sample) = BashEvaluate(var1 = reference,
-        var2 = background(sample).out1,
-        param1 = gatk,
-        param2 = java8,
-        script = """ 
-                   @param2@ -jar @param1@ VariantsToTable \
-                    -R @var1@ -V @var2@ -O @out1@ \
-                    -F CHROM -F POS -F REF -F ALT -F ID \
-                    -GF AD -GF DP -GF TLOD 
-                     """)
-
- backgroundCSVFixed(sample) = CSVDplyr(csv1 = backgroundCSV(sample).out1,
-       script = "library(tidyr)",
-       function1 = """filter(ALT == "<NON_REF>")""",
-       function2 = s"""separate($sample.AD, into = c("REFreads","ALTreads"), convert = T)""",
-       function3 = s"""select(CHROM, POS, REF, ALT, REFreads, ALTreads, Depth = $sample.DP, TLOD = $sample.TLOD)""",
-       function4 = """filter(TLOD < (0))""")
-}
-
-
- val backgroundAll = Rpipe(array1 = backgroundCSVFixed,
-      function1 = """csvOut <- data.frame(Sample = names(array1), Rate = map_dbl(array1, ~ sum(.x$ALTreads)/sum(as.numeric(.x$Depth))))""")
-
-// ------------------------------------------------------------
-// Background estimation ends here
 
 }
