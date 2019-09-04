@@ -5,12 +5,37 @@ library(ggthemes)
 library(cowplot)
 library(ggsci)
 
-x <- read.table("/mnt/storage1/work/amjad/ctdna/result_ctdnaVariants/varsAllFixed/out.csv", header = T, stringsAsFactors = F, sep= "\t")
-list <- read.table("/mnt/storage1/work/amjad/ctdna/result_ctdnaAlignment/bamOutCSV/out.csv", header = T, stringsAsFactors = F, sep= "\t")
-oldVars <- read.table("/mnt/storage1/work/amjad/ctdna/oldVars.csv", header = T, stringsAsFactors = F, sep = "\t")
-corrected <- read.table("/mnt/storage1/work/amjad/ctdna/result_ctdnaVariantsCorrected/varsAllFixed/out.csv", header = T, stringsAsFactors = F, sep = "\t")
-newMutect <- read.table("/mnt/storage2/work/amjad/ctdna/result_newMutect_novaseq/allVarsFixed/out.csv", header = T, stringsAsFactors = F, sep = "\t")
-newList <- read.table("/mnt/storage2/work/amjad/ctdna/result_newMutect_novaseq/listMatched/out.csv", header = T, stringsAsFactors = F, sep = "\t")
+#x <- read.table("/mnt/storage1/work/amjad/ctdna/result_ctdnaVariants/varsAllFixed/out.csv", header = T, stringsAsFactors = F, sep= "\t")
+#list <- read.table("/mnt/storage1/work/amjad/ctdna/result_ctdnaAlignment/bamOutCSV/out.csv", header = T, stringsAsFactors = F, sep= "\t")
+#oldVars <- read.table("/mnt/storage1/work/amjad/ctdna/oldVars.csv", header = T, stringsAsFactors = F, sep = "\t")
+#corrected <- read.table("/mnt/storage1/work/amjad/ctdna/result_ctdnaVariantsCorrected/varsAllFixed/out.csv", header = T, stringsAsFactors = F, sep = "\t")
+newMutect <- read.table("/mnt/storage2/work/amjad/ctdna/result_newMutectAll/allVarsFixedFilIndels/out.csv", header = T, stringsAsFactors = F, sep = "\t")
+newList <- read.table("/mnt/storage2/work/amjad/ctdna/result_newMutectAll/listMatched/out.csv", header = T, stringsAsFactors = F, sep = "\t")
+stats <- read.table("/mnt/storage2/work/amjad/ctdna/result_ctdnaAlignmentAll/stats/out.csv",header=T, stringsAsFactors = F, sep = "\t")
+dupStats <- read.table("/mnt/storage2/work/amjad/ctdna/result_ctdnaAlignmentAll/dupStats/out.csv",header=T, stringsAsFactors = F, sep = "\t")
+
+stats %>% 
+  filter(!grepl("Normal", Sample)) %>%
+  mutate(class = case_when(grepl("ctDNA",Sample) ~ "ctDNA",
+                           grepl("FFPE", Sample) ~ "FFPE",
+                           grepl("WB", Sample) ~ "WB")) %>%
+  arrange(class, -MEAN_BAIT_COVERAGE) %>%
+  mutate(Sample = factor(Sample, levels = Sample)) %>%
+          ggplot(aes(x = Sample, y = MEAN_BAIT_COVERAGE, fill = class)) + geom_bar(stat = "identity") +
+          theme_wsj() + scale_fill_wsj() + theme(axis.text.x = element_blank(), axis.ticks.x = element_blank(),
+                                                 legend.title = element_blank())
+
+dupStats %>% 
+  filter(!grepl("Normal", Sample)) %>%
+  mutate(class = case_when(grepl("ctDNA",Sample) ~ "ctDNA",
+                           grepl("FFPE", Sample) ~ "FFPE",
+                           grepl("WB", Sample) ~ "WB")) %>%
+  arrange(class, -PERCENT_DUPLICATION) %>%
+  mutate(Sample = factor(Sample, levels = Sample)) %>%
+  ggplot(aes(x = Sample, y = PERCENT_DUPLICATION, fill = class)) + geom_bar(stat = "identity") +
+  theme_wsj() + scale_fill_wsj() + theme(axis.text.x = element_blank(), axis.ticks.x = element_blank(),
+                                         legend.title = element_blank())
+
 
 sequencedSamples <- newList %>%
   mutate(sample = map_chr(strsplit(KeyTumor, "_"),
@@ -32,7 +57,7 @@ vars <- map_dfr(c("WB","FFPE", "ctDNA_0","ctDNA_1","ctDNA_2","ctDNA_3"),
         mutate(Tumor.ratioVAF = AD_VAF)
 
 
-ctDNABarPlot <- function(mutations, type = c("mutation","FFPE","effect","overlap"), whatOverlap = c("FFPE","ctDNA_0","ctDNA_1","ctDNA_2"), customTheme = theme_wsj(),
+ctDNABarPlot <- function(mutations, type = c("mutation","FFPE","effect","overlap"), whatOverlap = c("FFPE","ctDNA_0","ctDNA_1","ctDNA_2","ctDNA_3"), customTheme = theme_wsj(),
                          customFill = scale_fill_viridis(discrete = T,option = "A",begin = 0.2, end  = 0.8, direction = -1), ncol = 7){
   require(dplyr)
   require(viridis)
@@ -119,11 +144,77 @@ ctDNAVafPlot <- function(mutations, threshold = 2, patients = unique(mutations$P
   return(list(vaf = vaf, plot = plot))
 }
 
-plot1 <- ctDNABarPlot(oldVars,List = list,customTheme = theme_wsj())
-plot2 <- ctDNAVafPlot(oldVars,sampleList = list,customTheme = theme_wsj(), threshold = 2)$plot
+relapseOverlap <-  ctDNABarPlot(vars, type = "overlap", whatOverlap = "ctDNA_3", customTheme = theme_linedraw() + theme(panel.grid = element_line(colour = "grey90")))
+baselineOverlap <-  ctDNABarPlot(vars, type = "overlap", whatOverlap = "ctDNA_0", customTheme = theme_linedraw() + theme(panel.grid = element_line(colour = "grey90")))
+ffpeOverlap <- ctDNABarPlot(vars, type = "overlap", whatOverlap = "FFPE",customTheme = theme_linedraw() + theme(panel.grid = element_line(colour = "grey90")))
 
-plot3 <- ctDNABarPlot(corrected,sampleList = list,customTheme = theme_wsj(),type = "FFPE")
-plot4 <- ctDNAVafPlot(corrected,sampleList = list,customTheme = theme_wsj(), threshold = 2)$plot
+ggsave(plot = relapseOverlap, filename = "/mnt/storage2/work/amjad/ctdna/plots/relapseOverlap.png")
+ggsave(plot = baselineOverlap, filename = "/mnt/storage2/work/amjad/ctdna/plots/baselineOverlap.png")
+ggsave(plot = ffpeOverlap, filename = "/mnt/storage2/work/amjad/ctdna/plots/ffpeOverlap.png")
 
-plot_grid(plot1, plot2,nrow = 2, ncol = 1)
+withRelapse <- c("CHIC_136", "CHIC_52", "CHIC_97")
+ffpeBaseline <- c("CHIC_100","CHIC_12","CHIC_15","CHIC_16","CHIC_2","CHIC_27","CHIC_29","CHIC_35","CHIC_38",
+                  "CHIC_42","CHIC_49","CHIC_63","CHIC_70","CHIC_73","CHIC_88","CHIC_91","CHIC_92","CHIC_99",
+                  "CHIC_118","CHIC_28","CHIC_39","CHIC_61", "CHIC_123", "CHIC_4","CHIC_94")
 
+baseLineRelapsePlots <- newMutect %>% 
+    filter(Patient %in% c("CHIC_97","CHIC_136")) %>% 
+  ggplot(aes(x = ctDNA_0.AD_VAF, y = ctDNA_3.AD_VAF)) + 
+  geom_point(size = 3, color = "skyblue4") + theme_linedraw() + 
+  theme(panel.grid = element_line(colour = "grey90")) +
+  facet_grid(~Patient, scales = "free")
+
+ffpeRelapsePlots <- newMutect %>% 
+  filter(Patient %in% c("CHIC_52")) %>% 
+  ggplot(aes(x = FFPE.AD_VAF, y = ctDNA_3.AD_VAF)) + 
+  geom_point(size = 3, color = "skyblue4") + theme_linedraw() + 
+  theme(panel.grid = element_line(colour = "grey90")) +
+  facet_grid(~Patient, scales = "free")
+
+ffpeBaselinePlots <-  newMutect %>% 
+  filter(Patient %in% ffpeBaseline) %>% 
+  ggplot(aes(x = FFPE.AD_VAF, y = ctDNA_0.AD_VAF)) + 
+  geom_point(size = 1.5, color = "skyblue4") + theme_linedraw() + 
+  theme(panel.grid = element_line(colour = "grey90")) +
+  facet_wrap(~Patient, scales = "free", ncol = 5)
+
+ggsave(plot = baseLineRelapsePlots, filename = "/mnt/storage2/work/amjad/ctdna/plots/baseLineRelapsePlots.png")
+ggsave(plot = ffpeRelapsePlots, filename = "/mnt/storage2/work/amjad/ctdna/plots/ffpeRelapsePlots.png")
+ggsave(plot = ffpeBaselinePlots, filename = "/mnt/storage2/work/amjad/ctdna/plots/ffpeBaselinePlots.png")
+
+overlaps <- newMutect %>%
+  filter(Patient %in% ffpeBaseline) %>%
+  filter(FFPE.AD_VAF > 0 | ctDNA_0.AD_VAF > 0) %>%
+  group_by(Patient) %>%
+  summarize(Shared = sum(FFPE.AD_VAF > 0 & ctDNA_0.AD_VAF > 0, na.rm = T),
+            FFPE = sum(FFPE.AD_VAF > 0 & ctDNA_0.AD_VAF == 0, na.rm = T),
+            Baseline = sum(FFPE.AD_VAF == 0 & ctDNA_0.AD_VAF > 0, na.rm =T)) %>%
+  as.data.frame() 
+
+overlapsPlot <- overlaps %>% melt() %>% mutate(variable = factor(variable, levels = rev(levels(variable)))) %>%
+  ggplot(aes(x = Patient, y = value, fill = variable)) + geom_bar(stat = "identity", position = "stack") +
+      theme_pander() + theme(axis.text.x = element_text(angle = 60, hjust = 1.1), legend.title = element_blank()) + 
+      scale_fill_viridis(discrete = T, option = "A", alpha = 0.8, direction = -1,begin = 0.15, end = 0.8) +
+      ylab("# Mutations") + xlab("")
+
+ggsave(plot = overlapsPlot, filename = "/mnt/storage2/work/amjad/ctdna/plots/overlapsPlot.png")
+write.table(overlaps, file = "/mnt/storage2/work/amjad/ctdna/plots/FFPEbaselineOverlaps.csv", col.names = T, row.names = F, sep = "\t", quote = F)
+
+vafPlot <- ctDNAVafPlot(vars, sequencedSamples = sequencedSamples, logY = F)$plot
+ggsave(plot = vafPlot, filename = "/mnt/storage2/work/amjad/ctdna/plots/vafPlot.png")
+
+boxplots <- newMutect %>% select(Patient, ends_with("VAF"), -maxVAF) %>%
+     melt() %>% filter(variable != "WB.AD_VAF") %>% ggplot(aes(x = variable, y = value, colour = variable)) + 
+       geom_boxplot() + ggbeeswarm::geom_quasirandom() + 
+       facet_wrap(~Patient, ncol = 5, scales = "free") + theme_linedraw() + 
+       theme(panel.grid = element_line(colour = "grey90"), axis.text.x = element_blank()) + 
+       scale_color_d3() + xlab("") + ylab("VAF")
+
+ggsave(plot = boxplots, filename = "/mnt/storage2/work/amjad/ctdna/plots/VAFboxplots.png")
+
+vafs <- newMutect %>% 
+  filter(ctDNA_0.AD_VAF > 0.005) %>% 
+  group_by(Patient) %>% summarize(meanVAF = mean(ctDNA_0.AD_VAF), n = n()) %>% 
+  as.data.frame()
+
+write.table(vafs, file = "/mnt/storage2/work/amjad/ctdna/plots/VAFs_threshold0.005.csv", col.names=T,row.names=F, sep = "\t", quote = F)
