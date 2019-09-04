@@ -1,5 +1,5 @@
 #!/usr/bin/env anduril
-//$OPT --threads 5
+//$OPT --threads 20
 //$OPT -d /mnt/storage2/work/amjad/ctdna/result_newMutectAll
 
 import anduril.builtin._
@@ -270,13 +270,13 @@ for ( rowMap <- iterCSV(outBamArrayCSVmerged) ) {
      array1 = contamByPatient(patient),
      array2 = segsByPatient(patient),
      script = s"$java8 -jar $gatk FilterMutectCalls -R @var3@ -V @var1@  -O @out1@ --stats @var1@.stats --filtering-stats @out2@ " +
-               " --max-events-in-region 10 --min-median-read-position 15 -L @var4@ -ip 300 -ob-priors @var2@ " +
+               " --max-events-in-region 50 --min-median-read-position 15 --distance-on-haplotype 500 -L @var4@ -ip 300 " +
              // """ $( paste -d ' ' <(getarrayfiles array1)  | sed 's,^, --contamination-table ,' | tr -d '\\\n' ) """ +
               """ $( paste -d ' ' <(getarrayfiles array2)  | sed 's,^, --tumor-segmentation ,' | tr -d '\\\n' ) """)
 // -ob-priors @var2@
   varsFiltered(patient)._filename("out1", patient + "_filteredVariants.vcf.gz")
   varsFiltered(patient)._filename("out2", patient + "_filteringStats.csv")
-
+/*
   varsFilteredAlignments(patient) = BashEvaluate(var1 = varsFiltered(patient).out1,
      var2 = reference,
      var3 = hg38Image.out1,
@@ -284,9 +284,10 @@ for ( rowMap <- iterCSV(outBamArrayCSVmerged) ) {
      script = s"$java8 -jar $gatk FilterAlignmentArtifacts -R @var2@ -V @var1@ --bwa-mem-index-image @var3@ -O @out1@ " +
               """ $( paste -d ' ' <(getarrayfiles array1)  | sed 's,^, -I ,' | tr -d '\\\n' ) """)
    varsFilteredAlignments(patient)._filename("out1", patient + "_alignFiltered.vcf.gz")
-
+*/
   varsPass(patient) = BashEvaluate(var1 = varsFiltered(patient).out1,
-       script = s"$java8 -jar $gatk SelectVariants --exclude-filtered -V @var1@ -O @out1@")
+       var2 = targetsIL.out1,
+       script = s"$java8 -jar $gatk SelectVariants --exclude-filtered  -L @var2@ -V @var1@ -O @out1@")
   varsPass(patient)._filename("out1", patient + "_passed.vcf.gz")
 
   varsPassOut(patient) = varsPass(patient).out1
@@ -312,6 +313,7 @@ for ( rowMap <- iterCSV(outBamArrayCSVmerged) ) {
                     -F avsnp147 -F cosmic68 -F SIFT_score -F SIFT_pred \
                     -F Polyphen2_HDIV_score -F Polyphen2_HDIV_pred -F Polyphen2_HVAR_score -F Polyphen2_HVAR_pred \
                     -F MutationTaster_score -F MutationTaster_pred -F MutationAssessor_score -F MutationAssessor_pred \
+                    -F CONTQ -F GERMQ -F ROQ -F MBQ -F ECNT -F MMQ -F MPOS -F NALOD -F POPAF -F SEQQ  \
                     -F CADD_phred -F DANN_score -GF AD -GF DP -GF AF -GF F1R2 -GF F2R1 -GF PGT -GF PID 
             """)
 
@@ -328,7 +330,7 @@ for ( rowMap <- iterCSV(outBamArrayCSVmerged) ) {
      function4 = """rename_all(~ gsub("PID", "PhasingID", .x))""",
      function5 = """rename_all(~ gsub("SB", "PerSampleStrandBias", .x))""",
      function6 = """mutate_at(vars(ends_with("AD")), list(RefCount = RefCount, AltCount = AltCount, VAF = VAF))""",
-     function7 = """select(1:26, starts_with("FFPE"), starts_with("ctDNA_0"), starts_with("ctDNA_1"), starts_with("ctDNA_2"), starts_with("ctDNA_3"), starts_with("WB"))""")
+     function7 = """select(1:38, starts_with("FFPE"), starts_with("ctDNA_0"), starts_with("ctDNA_1"), starts_with("ctDNA_2"), starts_with("ctDNA_3"), starts_with("WB"))""")
 
  }
 }

@@ -5,6 +5,7 @@ back <- read.table("/mnt/storage2/work/amjad/ctdna/result_newMutect2_2/backgroun
 
 backgroundRates <- read.table("/mnt/storage2/work/amjad/ctdna/result_newMutectAll/backgroundAll/csvOut.csv", header = T, stringsAsFactors = F, sep = "\t")
 x <- read.table("/mnt/storage2/work/amjad/ctdna/result_newMutectAll/allVarsFixedFilIndels/out.csv",header=T,stringsAsFactors = F, sep = "\t")
+mutations <- read.table("/mnt/storage2/work/amjad/ctdna/code/ctdna/result_mutectDoubleCalling/allVarsFixedFilIndels/out.csv",header=T,stringsAsFactors = F, sep = "\t")
 
 
 convolve.binomial <- function(p) {
@@ -47,6 +48,29 @@ positivityTest <- function(depths, altReads, rate, seed, nPermutation){
   pvalue <- sum(map_dbl(seeds, ~simulator(length(depths), depths, rate,  altReads, seed = .x)))/nPermutation
   return(pvalue)
 }
+
+getReadsHoldingMutation <- function(chr, pos, alt, bam, tag = ""){
+  require(GenomicAlignments)
+  gr <- GRanges(chr, IRanges(pos, pos))
+  if(tag == ""){
+    stackedStrings <- stackStringsFromBam(bam, use.names=T, param = gr)
+  } else {
+    stackedStrings <- stackStringsFromBam(bam, use.names=T, 
+                          param = ScanBamParam(tagFilter = list("RG" = tag), which = gr)) 
+  }
+  out <- data.frame(ID = names(stackedStrings), seq = as.data.frame(stackedStrings)[,1])
+  return(as.character(out[out$seq == alt, "ID"]))
+}
+
+#x = stackStringsFromBam("result_ctdnaAlignmentAll/consensusRecal_ctDNA_CHIC_74_2/ctDNA_CHIC_74_2_consensusRecal.bam", use.names=T, param = gr)
+
+samplesToTest <- backgroundRates %>%
+  mutate(patient = map_chr(strsplit(Sample,"_"), ~paste(.x[2],.x[3], sep = "_")),
+         series = map_chr(strsplit(Sample,"_"), ~paste(.x[1],.x[4], sep = "_"))) %>%
+  filter((patient %in% c("CHIC_15","CHIC_32") & grepl("_1$", Sample)) |
+           (patient %in% c("CHIC_2","CHIC_27","CHIC_45") & grepl("_3$", Sample)) |
+           (!patient %in% c("CHIC_2","CHIC_27","CHIC_45") & grepl("_2$", Sample))) %>%
+  filter(!patient %in% c("CHIC_143","CHIC_64"))
 
 samplesToTest <- backgroundRates %>% 
   filter(grepl("ctDNA",Sample) & !grepl("_0", Sample) & !grepl("Normal",Sample) & !grepl("CHIC_143",Sample)) %>%
