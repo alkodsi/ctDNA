@@ -62,6 +62,73 @@ getReadsHoldingMutation <- function(chr, pos, alt, bam, tag = ""){
   return(as.character(out[out$seq == alt, "ID"]))
 }
 
+getReadCounts <- function(chr, pos, base, bam, tag = "", min_base_quality = 20, max_depth = 100000, include_indels = F, min_mapq = 30){
+  require(Rsamtools)
+  gr <- GRanges(chr, IRanges(pos, pos))
+  if(tag == ""){
+    sbp <- ScanBamParam(which = gr)
+  } else {
+    sbp <- ScanBamParam(which = gr, tagFilter = list("RG" = tag))
+  }
+  pileupParam = PileupParam(max_depth = max_depth, min_base_quality = min_base_quality,
+                            min_mapq = min_mapq, distinguish_strands = F, 
+                            include_deletions = include_indels, include_insertions = include_indels)
+
+  p <- pileup(bam, scanBamParam = sbp, pileupParam = pileupParam)
+  depth <- ifelse(!base %in% p$nucleotide, 0, p[p$nucleotide == base, "count"])
+  return(depth)
+}
+
+getBackgroundRate <- function(bam, targets, reference, vafThreshold = 0.1, tag = "", min_base_quality = 20, max_depth = 100000, include_indels = F, min_mapq = 30){
+  require(Rsamtools)
+  gr <- GRanges(targets$chr, IRanges(targets$start, targets$end))
+  if(tag == ""){
+    sbp <- ScanBamParam(which = gr)
+  } else {
+    sbp <- ScanBamParam(which = gr, tagFilter = list("RG" = tag))
+  }
+  pileupParam <- PileupParam(max_depth = max_depth, min_base_quality = min_base_quality,
+                            min_mapq = min_mapq, distinguish_strands = F, 
+                            include_deletions = include_indels, include_insertions = include_indels)
+
+  p <- pileup(bam, scanBamParam = sbp, pileupParam = pileupParam) %>%
+          spread(-nucleotide, count, fill = 0) %>%
+          mutate(ref = as.character(getSeq(reference, GRanges(seqnames, IRanges(pos, pos))))) %>%
+          mutate(depth = A + C + G + T)
+  
+  pAnn <- p %>% mutate(refCount = map2_dbl(c(1:nrow(p)), p$ref, ~ p[.x, .y]),
+                       nonRefCount = depth - refCount) %>%
+               filter(nonRefCount/depth < vafThreshold)
+  rate <- sum(as.numeric(pAnn$nonRefCount))/sum(as.numeric(pAnn$depth))
+  return(rate)
+}
+
+testSample <- function(mutations, bam, targets, reference, tag = "", vafThreshold = 0.1, 
+                       min_base_quality = 20, max_depth = 10000, include_indels = F, min_mapq = 30,
+                       nPermutation = 10000, seed = 123){
+  cat("Estimating background rate ...\n")
+  bg <- getBackgroundRate(bam = bam, targets = targets, reference = reference, tag = tag,
+                          vafThreshold = vafThreshold, min_base_quality = min_base_quality, max_depth = max_depth, 
+                          include_indels = include_indels, min_mapq = min_mapq)
+  cat(paste("Background rate is", bg, "\n"))
+  cat("Getting ref and alt Counts \n")
+  altReads <- pmap_dbl(list(mutations$CHROM, mutations$POS, mutations$ALT),
+                       function(x, y, z) getReadCounts(chr = x, pos = y, base = z, bam = bam,
+                                                       tag = tag, min_base_quality = min_base_quality,
+                                                       min_mapq = min_mapq, max_depth = max_depth, include_indels = include_indels))
+  
+  refReads <- pmap_dbl(list(mutations$CHROM, mutations$POS, mutations$REF),
+                       function(x, y, z) getReadCounts(chr = x, pos = y, base = z, bam = bam,
+                                                       tag = tag, min_base_quality = min_base_quality,
+                                                       min_mapq = min_mapq, max_depth = max_depth, include_indels = include_indels))
+  refAlt <- data.frame(Ref = refReads, Alt = altReads)
+  cat("Running permutation test \n")
+  posTest <- positivityTest(depths = refReads + altReads, altReads = altReads, rate = bg/3, seed = seed, nPermutation = nPermutation)
+  cat(paste("Pvalue = ", posTest, "\n"))
+  cat(paste("Sample is ctDNA", ifelse(posTest < 0.05, "positive\n", "negative\n")))
+  return(list(counts = refAlt, pvalue = posTest))
+}
+
 #x = stackStringsFromBam("result_ctdnaAlignmentAll/consensusRecal_ctDNA_CHIC_74_2/ctDNA_CHIC_74_2_consensusRecal.bam", use.names=T, param = gr)
 
 samplesToTest <- backgroundRates %>%
@@ -86,7 +153,8 @@ wbSamples <-  backgroundRates %>%
 
 mutations =  x %>% 
   filter(ctDNA_0.AD_VAF > 0.001 | FFPE.AD_VAF > 0.01) %>%  
-  filter(nchar(REF) == 1 & nchar(ALT) == 1)
+  filter(nchar(REF) == 1 & nchar(ALT) == 1) %>%
+  filter(ECNT <= 10)
 
 results <- data.frame(Sample = samplesToTest$Sample,
                       Pvalue = pmap_dbl(list(samplesToTest$patient, samplesToTest$series, samplesToTest$Rate),
