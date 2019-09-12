@@ -1,6 +1,6 @@
 #!/usr/bin/env anduril
-//$OPT --threads 8
-//$OPT -d /mnt/storage2/work/amjad/ctdna/result_newMutectAll
+//$OPT --threads 16
+//$OPT -d /mnt/storage2/work/amjad/ctdna/result_newMutectNova
 
 import anduril.builtin._
 import anduril.tools._
@@ -10,7 +10,7 @@ import anduril.sequencing._
 
 object ctdna{
 
-  val list = INPUT(path = "/mnt/storage2/work/amjad/ctdna/result_ctdnaAlignmentAll/bamCorrectedOutCSV/out.csv")
+  val list = INPUT(path = "/mnt/storage2/work/amjad/ctdna/NovaSeqBams/list.csv")
   val gnomad = INPUT(path = "/mnt/storage1/rawdata/resources/hg19/af-only-gnomad.raw.sites.b37.vcf.gz")
   val chain = INPUT(path = "/mnt/storage1/rawdata/resources/chains/b37tohg19.chain")
   val reference = INPUT(path = "/mnt/storage1/rawdata/resources/hg19/ucsc.hg19.fasta")
@@ -50,10 +50,6 @@ object ctdna{
   exachg19._filename("out1","Exac_hg19.vcf.gz")
   exachg19._filename("out2","rejected.vcf.gz")
   
-  val hg38Image = BashEvaluate(var1 = hg38reference,
-        script = s"$java8 -jar $gatk BwaMemIndexImageCreator -I @var1@ -O @out1@")
-  hg38Image._filename("out1","referencehg38.fasta.img")
-
 
   val listTumors = CSVDplyr(csv1 = list,
        function1 = """mutate(Patient = sapply(strsplit(Key,"_"),function(x)paste(x[2],x[3],sep="_")))""",

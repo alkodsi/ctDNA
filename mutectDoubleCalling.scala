@@ -255,6 +255,7 @@ for ( rowMap <- iterCSV(outBamArrayCSVmerged) ) {
   segsByPatient(patient) = CSV2Array(in = outSegsArray.outArray(patient),
       keys = "column")
 
+  if(patient != "CHIC_143"){
   vars(patient) = BashEvaluate(array1 = BamsByPatient(patient),
         var1 = normalControl(patient),
         var2 = reference,
@@ -263,13 +264,28 @@ for ( rowMap <- iterCSV(outBamArrayCSVmerged) ) {
         var5 = targetsIL.out1,
         param1 = keyNormal,
         script = s"$java8 -jar $gatk Mutect2 -R @var2@ -I @var1@ -O @out1@ --max-reads-per-alignment-start 0 --pcr-indel-model HOSTILE --bam-output @out3@ " +
-                  " --germline-resource @var4@ --max-mnp-distance 10 --panel-of-normals @var3@ -L @var5@ -ip 300 --f1r2-tar-gz @out2@ -normal @param1@" +
+                  " --germline-resource @var4@ --panel-of-normals @var3@ -L @var5@ -ip 300 --f1r2-tar-gz @out2@ -normal @param1@" +
                   """ $( paste -d ' ' <(getarrayfiles array1)  | sed 's,^, -I ,' | tr -d '\\\n' ) """)        
   vars(patient)._filename("out1", patient + "_rawVariants.vcf.gz")
   vars(patient)._filename("out2", patient + "_f1r2.tar.gz")
   vars(patient)._filename("out3", patient + "_mutect2.bam")
   // --force-active true --tumor-lod-to-emit 0 --initial-tumor-lod 0 -bamout @out3@
   // --pcr-indel-model AGGRESSIVE
+ } else {
+    vars(patient) = BashEvaluate(array1 = BamsByPatient(patient),
+        var1 = normalControl(patient),
+        var2 = reference,
+        var3 = pon.out1,
+        var4 = gnomadhg19.out1,
+        var5 = targetsIL.out1,
+        param1 = keyNormal,
+        script = s"$java8 -jar $gatk Mutect2 -R @var2@ -O @out1@ --max-reads-per-alignment-start 0 --pcr-indel-model HOSTILE --bam-output @out3@ " +
+                  " --germline-resource @var4@ --panel-of-normals @var3@ -L @var5@ -ip 300 --f1r2-tar-gz @out2@ " +
+                  """ $( paste -d ' ' <(getarrayfiles array1)  | sed 's,^, -I ,' | tr -d '\\\n' ) """)        
+  vars(patient)._filename("out1", patient + "_rawVariants.vcf.gz")
+  vars(patient)._filename("out2", patient + "_f1r2.tar.gz")
+  vars(patient)._filename("out3", patient + ".bam")
+  }
 
 
   F1R2Model(patient) = BashEvaluate(var1 = vars(patient).out2,
@@ -316,7 +332,6 @@ for ( rowMap <- iterCSV(outBamArrayCSVmerged) ) {
             protocol = "refGene,avsnp147,cosmic68,dbnsfp30a,icgc21",
             operation = "g,f,f,f,f")
 
- if(patient != "CHIC_143"){
 
   varsAnnotCSV(patient) = BashEvaluate(var1 = reference,
             var2 = varsAnnot(patient).vcfOut,
@@ -350,7 +365,7 @@ for ( rowMap <- iterCSV(outBamArrayCSVmerged) ) {
      function6 = """mutate_at(vars(ends_with("AD")), list(RefCount = RefCount, AltCount = AltCount, VAF = VAF))""",
      function7 = """select(1:38, starts_with("FFPE"), starts_with("ctDNA_0"), starts_with("ctDNA_1"), starts_with("ctDNA_2"), starts_with("ctDNA_3"), starts_with("WB"))""")
 
- }
+ 
 }
 
 val allVars = CSVListJoin(in = varsAnnotCSVFixed,

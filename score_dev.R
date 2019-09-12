@@ -73,7 +73,7 @@ samplesToTest <- backgroundRates %>%
   filter(!patient %in% c("CHIC_143","CHIC_64"))
 
 samplesToTest <- backgroundRates %>% 
-  filter(grepl("ctDNA",Sample) & !grepl("_0", Sample) & !grepl("Normal",Sample) & !grepl("CHIC_143",Sample)) %>%
+  filter(grepl("ctDNA",Sample) & !grepl("_0", Sample) & !grepl("Normal",Sample) ) %>%
   mutate(patient = map_chr(strsplit(Sample,"_"), ~paste(.x[2],.x[3], sep = "_")),
          series = map_chr(strsplit(Sample,"_"), ~paste(.x[1],.x[4], sep = "_"))) %>%
   filter(!patient %in% c("CHIC_64")) 
