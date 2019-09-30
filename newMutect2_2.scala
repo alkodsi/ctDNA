@@ -1,5 +1,5 @@
 #!/usr/bin/env anduril
-//$OPT --threads 8
+//$OPT --threads 14
 //$OPT -d /mnt/storage2/work/amjad/ctdna/result_newMutectAll
 
 import anduril.builtin._
@@ -249,8 +249,8 @@ for ( rowMap <- iterCSV(outBamArrayCSVmerged) ) {
         var4 = gnomadhg19.out1,
         var5 = targetsIL.out1,
         param1 = keyNormal,
-        script = s"$java8 -jar $gatk Mutect2 -R @var2@ -I @var1@ -O @out1@ --max-reads-per-alignment-start 0 --pcr-indel-model HOSTILE " +
-                  " --germline-resource @var4@ --panel-of-normals @var3@ -L @var5@ -ip 300 --f1r2-tar-gz @out2@ -normal @param1@" +
+        script = s"$java8 -jar $gatk Mutect2 -R @var2@ -I @var1@ -O @out1@ --max-reads-per-alignment-start 0 --pcr-indel-model HOSTILE  --bam-output @out3@ " +
+                  " --germline-resource @var4@ --panel-of-normals @var3@ -L @var5@ -ip 300 --f1r2-tar-gz @out2@ -normal @param1@ --max-mnp-distance 0 " +
                   """ $( paste -d ' ' <(getarrayfiles array1)  | sed 's,^, -I ,' | tr -d '\\\n' ) """)        
   vars(patient)._filename("out1", patient + "_rawVariants.vcf.gz")
   vars(patient)._filename("out2", patient + "_f1r2.tar.gz")
@@ -265,8 +265,8 @@ for ( rowMap <- iterCSV(outBamArrayCSVmerged) ) {
         var4 = gnomadhg19.out1,
         var5 = targetsIL.out1,
         param1 = keyNormal,
-        script = s"$java8 -jar $gatk Mutect2 -R @var2@ -O @out1@ --max-reads-per-alignment-start 0 --pcr-indel-model HOSTILE " +
-                  " --germline-resource @var4@ --panel-of-normals @var3@ -L @var5@ -ip 300 --f1r2-tar-gz @out2@ " +
+        script = s"$java8 -jar $gatk Mutect2 -R @var2@ -O @out1@ --max-reads-per-alignment-start 0 --pcr-indel-model HOSTILE  --bam-output @out3@ " +
+                  " --germline-resource @var4@ --panel-of-normals @var3@ -L @var5@ -ip 300 --f1r2-tar-gz @out2@ --max-mnp-distance 0 " +
                   """ $( paste -d ' ' <(getarrayfiles array1)  | sed 's,^, -I ,' | tr -d '\\\n' ) """)        
   vars(patient)._filename("out1", patient + "_rawVariants.vcf.gz")
   vars(patient)._filename("out2", patient + "_f1r2.tar.gz")
@@ -285,7 +285,7 @@ for ( rowMap <- iterCSV(outBamArrayCSVmerged) ) {
      array1 = contamByPatient(patient),
      array2 = segsByPatient(patient),
      script = s"$java8 -jar $gatk FilterMutectCalls -R @var3@ -V @var1@  -O @out1@ --stats @var1@.stats --filtering-stats @out2@ " +
-               " --max-events-in-region 50 --min-median-read-position 15 --distance-on-haplotype 500 -L @var4@ -ip 300 " +
+               " --max-events-in-region 50 --min-median-read-position 15 -L @var4@ -ip 300 " +
              // """ $( paste -d ' ' <(getarrayfiles array1)  | sed 's,^, --contamination-table ,' | tr -d '\\\n' ) """ +
               """ $( paste -d ' ' <(getarrayfiles array2)  | sed 's,^, --tumor-segmentation ,' | tr -d '\\\n' ) """)
 // -ob-priors @var2@
@@ -396,8 +396,9 @@ for ( rowMap <- iterCSV(list) ) {
         var1 = bamIn(sample),
         var2 = reference,
         var3 = targetsIL.out1,
-        script = s"$java8 -jar $gatk Mutect2 -R @var2@ -I @var1@ -O @out1@ --max-reads-per-alignment-start 0 -L @var3@ -ERC BP_RESOLUTION")
+        script = s"$java8 -jar $gatk Mutect2 -R @var2@ -I @var1@ -O @out1@ --max-reads-per-alignment-start 0 -L @var3@ -ERC BP_RESOLUTION  --bam-output @out2@ ")
   background(sample)._filename("out1", sample + "_background.vcf.gz")
+  background(sample)._filename("out2", sample + "_background.bam")
  
   backgroundCSV(sample) = BashEvaluate(var1 = reference,
         var2 = background(sample).out1,

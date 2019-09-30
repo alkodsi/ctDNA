@@ -5,8 +5,13 @@ back <- read.table("/mnt/storage2/work/amjad/ctdna/result_newMutect2_2/backgroun
 
 backgroundRates <- read.table("/mnt/storage2/work/amjad/ctdna/result_newMutectAll/backgroundAll/csvOut.csv", header = T, stringsAsFactors = F, sep = "\t")
 x <- read.table("/mnt/storage2/work/amjad/ctdna/result_newMutectAll/allVarsFixedFilIndels/out.csv",header=T,stringsAsFactors = F, sep = "\t")
-mutations <- read.table("/mnt/storage2/work/amjad/ctdna/code/ctdna/result_mutectDoubleCalling/allVarsFixedFilIndels/out.csv",header=T,stringsAsFactors = F, sep = "\t")
+x <- read.table("/mnt/storage2/work/amjad/ctdna/result_newMutectNova/allVarsFixedFilIndels/out.csv",header=T,stringsAsFactors = F, sep = "\t")
+x <- read.table("/mnt/storage2/work/amjad/ctdna/result_forcedCallingPipeline/allVarsFixedFilIndels/out.csv",header=T,stringsAsFactors = F, sep = "\t")
+backgroundRates <- read.table("/mnt/storage2/work/amjad/ctdna/result_newMutectNova/backgroundAll/csvOut.csv", header = T, stringsAsFactors = F, sep = "\t")
 
+mutations <- read.table("/mnt/storage2/work/amjad/ctdna/code/ctdna/result_mutectDoubleCalling/allVarsFixedFilIndels/out.csv",header=T,stringsAsFactors = F, sep = "\t")
+m <- read.table("/mnt/storage2/work/amjad/myoma/result_myomaPipeline2/allVarsFiltered/out.csv", header = T, stringsAsFactors = F, sep = "\t")
+a = get_fragment_size("/mnt/storage2/work/amjad/myoma/Bams//Patient3/18X-0203_S7_recal_reads.bam", mutations = m[m$Patient == "Patient3" & nchar(m$REF) == 1 & nchar(m$ALT) == 1,])
 
 convolve.binomial <- function(p) {
   # p is a vector of probabilities of Bernoulli distributions.
@@ -79,6 +84,38 @@ getReadCounts <- function(chr, pos, base, bam, tag = "", min_base_quality = 20, 
   return(depth)
 }
 
+get_mutations_read_counts <- function(mutations, bam, tag = "", min_base_quality = 20, 
+            max_depth = 100000, include_indels = F, min_mapq = 30){
+  
+  assertthat::assert_that(is.data.frame(mutations), assertthat::not_empty(mutations), 
+                          assertthat::has_name(mutations, c("CHROM", "POS", "REF", "ALT")))
+  
+  ref <- purrr::pmap_dbl(list(mutations$CHROM, mutations$POS, mutations$REF),
+                         function(x, y, z) getReadCounts(chr = x, pos = y, base = z, bam = bam,
+                                                         tag = tag, min_base_quality = min_base_quality,
+                                                         min_mapq = min_mapq, max_depth = max_depth, include_indels = include_indels))
+  
+  alt <- purrr::pmap_dbl(list(mutations$CHROM, mutations$POS, mutations$ALT),
+           function(x, y, z) getReadCounts(chr = x, pos = y, base = z, bam = bam,
+                                           tag = tag, min_base_quality = min_base_quality,
+                                           min_mapq = min_mapq, max_depth = max_depth, include_indels = include_indels))
+ return(list(ref = ref, alt = alt))  
+}
+
+filter_mutations <- function(mutations, bams, tags = rep("", length(bams)),
+              min_alt_reads = 2, min_samples = 2, 
+              min_base_quality = 20, max_depth = 100000, include_indels = F, min_mapq = 30) {
+  message("Filtering mutations ...\n") 
+  altMatrix <- purrr::map2_dfc(bams, tags, 
+                      ~ get_mutations_read_count(mutations = mutations, bam = .x, tag = .y,
+                               min_base_quality = min_base_quality, min_mapq = min_mapq, 
+                               max_depth = max_depth, include_indels = include_indels)$alt)
+  
+  idx <- rowSums(altMatrix > min_alt_reads) > min_samples
+  message(paste("Dropped", sum(idx), "mutations\n"))
+  return(mutations[-idx, ])
+}
+
 getBackgroundRate <- function(bam, targets, reference, vafThreshold = 0.1, tag = "", min_base_quality = 20, max_depth = 100000, include_indels = F, min_mapq = 30){
   require(Rsamtools)
   gr <- GRanges(targets$chr, IRanges(targets$start, targets$end))
@@ -106,12 +143,12 @@ getBackgroundRate <- function(bam, targets, reference, vafThreshold = 0.1, tag =
 testSample <- function(mutations, bam, targets, reference, tag = "", vafThreshold = 0.1, 
                        min_base_quality = 20, max_depth = 10000, include_indels = F, min_mapq = 30,
                        nPermutation = 10000, seed = 123){
-  cat("Estimating background rate ...\n")
+  message("Estimating background rate ...\n")
   bg <- getBackgroundRate(bam = bam, targets = targets, reference = reference, tag = tag,
                           vafThreshold = vafThreshold, min_base_quality = min_base_quality, max_depth = max_depth, 
                           include_indels = include_indels, min_mapq = min_mapq)
-  cat(paste("Background rate is", bg, "\n"))
-  cat("Getting ref and alt Counts \n")
+  message(paste("Background rate is", bg, "\n"))
+  message("Getting ref and alt Counts \n")
   altReads <- pmap_dbl(list(mutations$CHROM, mutations$POS, mutations$ALT),
                        function(x, y, z) getReadCounts(chr = x, pos = y, base = z, bam = bam,
                                                        tag = tag, min_base_quality = min_base_quality,
@@ -122,11 +159,26 @@ testSample <- function(mutations, bam, targets, reference, tag = "", vafThreshol
                                                        tag = tag, min_base_quality = min_base_quality,
                                                        min_mapq = min_mapq, max_depth = max_depth, include_indels = include_indels))
   refAlt <- data.frame(Ref = refReads, Alt = altReads)
-  cat("Running permutation test \n")
+  message("Running permutation test \n")
   posTest <- positivityTest(depths = refReads + altReads, altReads = altReads, rate = bg/3, seed = seed, nPermutation = nPermutation)
   cat(paste("Pvalue = ", posTest, "\n"))
   cat(paste("Sample is ctDNA", ifelse(posTest < 0.05, "positive\n", "negative\n")))
   return(list(counts = refAlt, pvalue = posTest))
+}
+
+
+filter_mutations_test <- function(mutations, bams, tags = rep("", length(bams)),
+                             min_alt_reads = 2, min_samples = 2, 
+                             min_base_quality = 20, max_depth = 100000, include_indels = F, min_mapq = 30) {
+  message("Filtering mutations ...\n") 
+  altMatrix <- purrr::map2_dfc(bams, tags, 
+                               ~ get_mutations_read_counts(mutations = mutations, bam = .x, tag = .y,
+                                                           min_base_quality = min_base_quality, min_mapq = min_mapq, 
+                                                           max_depth = max_depth, include_indels = include_indels)$alt)
+  
+  idx <- rowSums(altMatrix > min_alt_reads) > min_samples
+  message(paste("Dropped", sum(idx), "mutations\n"))
+  return(altMatrix)
 }
 
 #x = stackStringsFromBam("result_ctdnaAlignmentAll/consensusRecal_ctDNA_CHIC_74_2/ctDNA_CHIC_74_2_consensusRecal.bam", use.names=T, param = gr)
@@ -154,14 +206,117 @@ wbSamples <-  backgroundRates %>%
 mutations =  x %>% 
   filter(ctDNA_0.AD_VAF > 0.001 | FFPE.AD_VAF > 0.01) %>%  
   filter(nchar(REF) == 1 & nchar(ALT) == 1) %>%
-  filter(ECNT <= 10)
+  filter(ECNT <= 5) %>%
+  mutate(WB.PhasingID = ifelse(is.na(WB.PhasingID), ID, WB.PhasingID)) %>%
+  filter(!duplicated(WB.PhasingID))
 
+library(BSgenome.Hsapiens.UCSC.hg19)
+reference = BSgenome.Hsapiens.UCSC.hg19
+targets <- read.table("/mnt/storage1/rawdata/ctDNA/metadata/targets.bed", header = T, stringsAsFactors = F, sep= "\t")
+colnames(targets) <- c("chr","start","end","gene")
+
+samples <- data.frame(Sample = c("ctDNA_CHIC_100_2", "ctDNA_CHIC_102_2","ctDNA_CHIC_118_2","ctDNA_CHIC_123_2","ctDNA_CHIC_136_2","ctDNA_CHIC_143_2",
+                                 "ctDNA_CHIC_2_2","ctDNA_CHIC_27_3", "ctDNA_CHIC_28_2", "ctDNA_CHIC_29_2","ctDNA_CHIC_12_2","ctDNA_CHIC_15_1","ctDNA_CHIC_16_2",
+                                 "ctDNA_CHIC_3_2","ctDNA_CHIC_32_1","ctDNA_CHIC_35_2","ctDNA_CHIC_38_2","ctDNA_CHIC_4_2","ctDNA_CHIC_45_3","ctDNA_CHIC_49_2",
+                                 "ctDNA_CHIC_52_2","ctDNA_CHIC_61_2","ctDNA_CHIC_63_2","ctDNA_CHIC_65_2","ctDNA_CHIC_70_2","ctDNA_CHIC_72_2","ctDNA_CHIC_73_2",
+                                 "ctDNA_CHIC_74_2","ctDNA_CHIC_79_2","ctDNA_CHIC_88_2","ctDNA_CHIC_91_2","ctDNA_CHIC_92_2", 
+                                 "ctDNA_CHIC_94_2", "ctDNA_CHIC_97_2","ctDNA_CHIC_99_2")) %>%
+           mutate(outcome = ifelse(Sample %in% c("ctDNA_CHIC_100_2", "ctDNA_CHIC_102_2","ctDNA_CHIC_136_2","ctDNA_CHIC_143_2","ctDNA_CHIC_27_3","ctDNA_CHIC_15_1",
+                                                 "ctDNA_CHIC_3_2","ctDNA_CHIC_32_1","ctDNA_CHIC_4_2","ctDNA_CHIC_52_2","ctDNA_CHIC_72_2","ctDNA_CHIC_74_2",
+                                                 "ctDNA_CHIC_97_2","ctDNA_CHIC_99_2"), "relapse","cured"))
+
+samples$p = future_map2_dbl(samples$Sample, map_chr(strsplit(as.character(samples$Sample),"_"), ~paste(.x[2],.x[3], sep = "_")), 
+    ~test_ctDNA(mutations[mutations$Patient == .y,], reference = reference, targets = targets, 
+         bam = paste0("/mnt/storage2/work/amjad/ctdna/result_ctdnaAlignmentAll/consensusRecal_",.x,"/",.x,"_consensusRecal.bam"),
+         by_substitution = F, bam_list = bams[!grepl(.x, bams)], min_samples = 2, min_alt_reads = 1)$pvalue)
+colAUC(samples$p, samples$outcome)
+
+test_ctDNA(mutations[mutations$Patient == "CHIC_97",], reference = reference, targets = targets, 
+           bam = "/mnt/storage2/work/amjad/ctdna/result_ctdnaAlignmentAll/consensusRecal_ctDNA_CHIC_97_2/ctDNA_CHIC_97_2_consensusRecal.bam",
+           bam_list = bams)
+
+test_ctDNA(mutations[mutations$Patient == "CHIC_91",], reference = reference, targets = targets, 
+           bam = "/mnt/storage2/work/amjad/ctdna/result_newMutectAll/vars_CHIC_91/CHIC_91.bam",tag = "ID1.3", by_substitution = F, min_base_quality = 10)
+           
+mut <- filter_mutations(mutations[mutations$Patient == "CHIC_91",], 
+                        bams = c("/mnt/storage2/work/amjad/ctdna/result_ctdnaAlignmentAll/consensusRecal_ctDNA_CHIC_118_2/ctDNA_CHIC_118_2_consensusRecal.bam", 
+                                 "/mnt/storage2/work/amjad/ctdna/result_ctdnaAlignmentAll/consensusRecal_ctDNA_CHIC_2_3/ctDNA_CHIC_2_3_consensusRecal.bam",
+                                 "/mnt/storage2/work/amjad/ctdna/result_ctdnaAlignmentAll/consensusRecal_ctDNA_CHIC_12_2/ctDNA_CHIC_12_2_consensusRecal.bam",
+                                 "/mnt/storage2/work/amjad/ctdna/result_ctdnaAlignmentAll/consensusRecal_ctDNA_CHIC_123_2/ctDNA_CHIC_123_2_consensusRecal.bam",
+                                 "/mnt/storage2/work/amjad/ctdna/result_ctdnaAlignmentAll/consensusRecal_ctDNA_CHIC_88_2/ctDNA_CHIC_88_2_consensusRecal.bam",
+                                 "/mnt/storage2/work/amjad/ctdna/result_ctdnaAlignmentAll/consensusRecal_ctDNA_CHIC_92_2/ctDNA_CHIC_92_2_consensusRecal.bam",
+                                 "/mnt/storage2/work/amjad/ctdna/result_ctdnaAlignmentAll/consensusRecal_ctDNA_CHIC_45_3/ctDNA_CHIC_45_3_consensusRecal.bam",
+                                 "/mnt/storage2/work/amjad/ctdna/result_ctdnaAlignmentAll/consensusRecal_ctDNA_CHIC_49_2/ctDNA_CHIC_49_2_consensusRecal.bam",
+                                 "/mnt/storage2/work/amjad/ctdna/result_ctdnaAlignmentAll/consensusRecal_ctDNA_CHIC_70_2/ctDNA_CHIC_70_2_consensusRecal.bam",
+                                 "/mnt/storage2/work/amjad/ctdna/result_ctdnaAlignmentAll/consensusRecal_ctDNA_CHIC_79_2/ctDNA_CHIC_79_2_consensusRecal.bam",
+                                 "/mnt/storage2/work/amjad/ctdna/result_ctdnaAlignmentAll/consensusRecal_ctDNA_CHIC_91_2/ctDNA_CHIC_91_2_consensusRecal.bam",
+                                 "/mnt/storage2/work/amjad/ctdna/result_ctdnaAlignmentAll/consensusRecal_ctDNA_CHIC_94_2/ctDNA_CHIC_94_2_consensusRecal.bam",
+                                 "/mnt/storage2/work/amjad/ctdna/result_ctdnaAlignmentAll/consensusRecal_ctDNA_CHIC_29_2/ctDNA_CHIC_29_2_consensusRecal.bam",
+                                 "/mnt/storage2/work/amjad/ctdna/result_ctdnaAlignmentAll/consensusRecal_ctDNA_CHIC_73_2/ctDNA_CHIC_73_2_consensusRecal.bam",
+                                 "/mnt/storage2/work/amjad/ctdna/result_ctdnaAlignmentAll/consensusRecal_ctDNA_CHIC_63_2/ctDNA_CHIC_63_2_consensusRecal.bam",
+                                 "/mnt/storage2/work/amjad/ctdna/result_ctdnaAlignmentAll/consensusRecal_ctDNA_CHIC_65_2/ctDNA_CHIC_65_2_consensusRecal.bam",
+                                 "/mnt/storage2/work/amjad/ctdna/result_ctdnaAlignmentAll/consensusRecal_ctDNA_CHIC_61_2/ctDNA_CHIC_61_2_consensusRecal.bam",
+                                 "/mnt/storage2/work/amjad/ctdna/result_ctdnaAlignmentAll/consensusRecal_ctDNA_CHIC_42_2/ctDNA_CHIC_42_2_consensusRecal.bam",
+                                 "/mnt/storage2/work/amjad/ctdna/result_ctdnaAlignmentAll/consensusRecal_ctDNA_CHIC_39_2/ctDNA_CHIC_39_2_consensusRecal.bam",
+                                 "/mnt/storage2/work/amjad/ctdna/result_ctdnaAlignmentAll/consensusRecal_ctDNA_CHIC_38_2/ctDNA_CHIC_38_2_consensusRecal.bam",
+                                 "/mnt/storage2/work/amjad/ctdna/result_ctdnaAlignmentAll/consensusRecal_ctDNA_CHIC_35_2/ctDNA_CHIC_35_2_consensusRecal.bam",
+                                 "/mnt/storage2/work/amjad/ctdna/result_ctdnaAlignmentAll/consensusRecal_ctDNA_CHIC_28_2/ctDNA_CHIC_28_2_consensusRecal.bam",
+                                 "/mnt/storage2/work/amjad/ctdna/result_ctdnaAlignmentAll/consensusRecal_ctDNA_CHIC_16_2/ctDNA_CHIC_16_2_consensusRecal.bam",
+                                 "/mnt/storage2/work/amjad/ctdna/result_ctdnaAlignmentAll/consensusRecal_ctDNA_Normal_1//ctDNA_Normal_1_consensusRecal.bam"), 
+                        min_alt_reads = 0, min_samples = 2)
+
+bams = c("/mnt/storage2/work/amjad/ctdna/result_ctdnaAlignmentAll/consensusRecal_ctDNA_CHIC_118_0/ctDNA_CHIC_118_0_consensusRecal.bam", 
+         "/mnt/storage2/work/amjad/ctdna/result_ctdnaAlignmentAll/consensusRecal_ctDNA_CHIC_2_0/ctDNA_CHIC_2_0_consensusRecal.bam",
+         "/mnt/storage2/work/amjad/ctdna/result_ctdnaAlignmentAll/consensusRecal_ctDNA_CHIC_12_0/ctDNA_CHIC_12_0_consensusRecal.bam",
+         "/mnt/storage2/work/amjad/ctdna/result_ctdnaAlignmentAll/consensusRecal_ctDNA_CHIC_123_0/ctDNA_CHIC_123_0_consensusRecal.bam",
+         "/mnt/storage2/work/amjad/ctdna/result_ctdnaAlignmentAll/consensusRecal_ctDNA_CHIC_88_0/ctDNA_CHIC_88_0_consensusRecal.bam",
+         "/mnt/storage2/work/amjad/ctdna/result_ctdnaAlignmentAll/consensusRecal_ctDNA_CHIC_92_0/ctDNA_CHIC_92_0_consensusRecal.bam",
+         "/mnt/storage2/work/amjad/ctdna/result_ctdnaAlignmentAll/consensusRecal_ctDNA_CHIC_45_0/ctDNA_CHIC_45_0_consensusRecal.bam",
+         "/mnt/storage2/work/amjad/ctdna/result_ctdnaAlignmentAll/consensusRecal_ctDNA_CHIC_49_0/ctDNA_CHIC_49_0_consensusRecal.bam",
+         "/mnt/storage2/work/amjad/ctdna/result_ctdnaAlignmentAll/consensusRecal_ctDNA_CHIC_70_0/ctDNA_CHIC_70_0_consensusRecal.bam",
+         "/mnt/storage2/work/amjad/ctdna/result_ctdnaAlignmentAll/consensusRecal_ctDNA_CHIC_79_0/ctDNA_CHIC_79_0_consensusRecal.bam",
+         "/mnt/storage2/work/amjad/ctdna/result_ctdnaAlignmentAll/consensusRecal_ctDNA_CHIC_91_0/ctDNA_CHIC_91_0_consensusRecal.bam",
+         "/mnt/storage2/work/amjad/ctdna/result_ctdnaAlignmentAll/consensusRecal_ctDNA_CHIC_94_0/ctDNA_CHIC_94_0_consensusRecal.bam",
+         "/mnt/storage2/work/amjad/ctdna/result_ctdnaAlignmentAll/consensusRecal_ctDNA_CHIC_29_2/ctDNA_CHIC_29_2_consensusRecal.bam",
+         "/mnt/storage2/work/amjad/ctdna/result_ctdnaAlignmentAll/consensusRecal_ctDNA_CHIC_73_2/ctDNA_CHIC_73_2_consensusRecal.bam",
+         "/mnt/storage2/work/amjad/ctdna/result_ctdnaAlignmentAll/consensusRecal_ctDNA_CHIC_63_2/ctDNA_CHIC_63_2_consensusRecal.bam",
+         "/mnt/storage2/work/amjad/ctdna/result_ctdnaAlignmentAll/consensusRecal_ctDNA_CHIC_65_2/ctDNA_CHIC_65_2_consensusRecal.bam",
+         "/mnt/storage2/work/amjad/ctdna/result_ctdnaAlignmentAll/consensusRecal_ctDNA_CHIC_61_2/ctDNA_CHIC_61_2_consensusRecal.bam",
+         "/mnt/storage2/work/amjad/ctdna/result_ctdnaAlignmentAll/consensusRecal_ctDNA_CHIC_42_2/ctDNA_CHIC_42_2_consensusRecal.bam",
+         "/mnt/storage2/work/amjad/ctdna/result_ctdnaAlignmentAll/consensusRecal_ctDNA_CHIC_39_2/ctDNA_CHIC_39_2_consensusRecal.bam",
+         "/mnt/storage2/work/amjad/ctdna/result_ctdnaAlignmentAll/consensusRecal_ctDNA_CHIC_38_2/ctDNA_CHIC_38_2_consensusRecal.bam",
+         "/mnt/storage2/work/amjad/ctdna/result_ctdnaAlignmentAll/consensusRecal_ctDNA_CHIC_35_2/ctDNA_CHIC_35_2_consensusRecal.bam",
+         "/mnt/storage2/work/amjad/ctdna/result_ctdnaAlignmentAll/consensusRecal_ctDNA_CHIC_28_2/ctDNA_CHIC_28_2_consensusRecal.bam",
+         "/mnt/storage2/work/amjad/ctdna/result_ctdnaAlignmentAll/consensusRecal_ctDNA_CHIC_16_2/ctDNA_CHIC_16_2_consensusRecal.bam",
+         "/mnt/storage2/work/amjad/ctdna/result_ctdnaAlignmentAll/consensusRecal_ctDNA_Normal_1//ctDNA_Normal_1_consensusRecal.bam",
+         "/mnt/storage2/work/amjad/ctdna/result_ctdnaAlignmentAll/consensusRecal_ctDNA_CHIC_100_0/ctDNA_CHIC_100_0_consensusRecal.bam",
+         "/mnt/storage2/work/amjad/ctdna/result_ctdnaAlignmentAll/consensusRecal_ctDNA_CHIC_102_0/ctDNA_CHIC_102_0_consensusRecal.bam",
+         "/mnt/storage2/work/amjad/ctdna/result_ctdnaAlignmentAll/consensusRecal_ctDNA_CHIC_97_0/ctDNA_CHIC_97_0_consensusRecal.bam",
+         "/mnt/storage2/work/amjad/ctdna/result_ctdnaAlignmentAll/consensusRecal_ctDNA_CHIC_72_0/ctDNA_CHIC_72_0_consensusRecal.bam",
+         "/mnt/storage2/work/amjad/ctdna/result_ctdnaAlignmentAll/consensusRecal_ctDNA_CHIC_74_0/ctDNA_CHIC_74_0_consensusRecal.bam",
+         "/mnt/storage2/work/amjad/ctdna/result_ctdnaAlignmentAll/consensusRecal_ctDNA_CHIC_15_0/ctDNA_CHIC_15_0_consensusRecal.bam",
+         "/mnt/storage2/work/amjad/ctdna/result_ctdnaAlignmentAll/consensusRecal_ctDNA_CHIC_99_0/ctDNA_CHIC_99_0_consensusRecal.bam",
+         "/mnt/storage2/work/amjad/ctdna/result_ctdnaAlignmentAll/consensusRecal_ctDNA_CHIC_3_0/ctDNA_CHIC_3_0_consensusRecal.bam",
+         "/mnt/storage2/work/amjad/ctdna/result_ctdnaAlignmentAll/consensusRecal_ctDNA_CHIC_100_2/ctDNA_CHIC_100_2_consensusRecal.bam",
+         "/mnt/storage2/work/amjad/ctdna/result_ctdnaAlignmentAll/consensusRecal_ctDNA_CHIC_102_2/ctDNA_CHIC_102_2_consensusRecal.bam",
+         "/mnt/storage2/work/amjad/ctdna/result_ctdnaAlignmentAll/consensusRecal_ctDNA_CHIC_97_2/ctDNA_CHIC_97_2_consensusRecal.bam",
+         "/mnt/storage2/work/amjad/ctdna/result_ctdnaAlignmentAll/consensusRecal_ctDNA_CHIC_72_2/ctDNA_CHIC_72_2_consensusRecal.bam",
+         "/mnt/storage2/work/amjad/ctdna/result_ctdnaAlignmentAll/consensusRecal_ctDNA_CHIC_74_2/ctDNA_CHIC_74_2_consensusRecal.bam",
+         "/mnt/storage2/work/amjad/ctdna/result_ctdnaAlignmentAll/consensusRecal_ctDNA_CHIC_15_1/ctDNA_CHIC_15_1_consensusRecal.bam",
+         "/mnt/storage2/work/amjad/ctdna/result_ctdnaAlignmentAll/consensusRecal_ctDNA_CHIC_99_2/ctDNA_CHIC_99_2_consensusRecal.bam",
+         "/mnt/storage2/work/amjad/ctdna/result_ctdnaAlignmentAll/consensusRecal_ctDNA_CHIC_3_2/ctDNA_CHIC_3_2_consensusRecal.bam")
+
+out <- future_map_dfc(bams, function(x){
+   h <- hist(get_fragment_size(x)$size, breaks = seq(0, 400, by = 2), plot = F)
+   return(h$counts/sum(h$counts))
+}, .progress = T)
+  
 results <- data.frame(Sample = samplesToTest$Sample,
                       Pvalue = pmap_dbl(list(samplesToTest$patient, samplesToTest$series, samplesToTest$Rate),
-                                        function(x,y,z) positivityTest(depths = mutations[mutations$Patient == x, paste0(y,".DP")],
-                                               rate = z/3,  
+                                        function(x,y,z) positivity_test(depths = mutations[mutations$Patient == x, paste0(y,".DP")],
+                                               rate = list(rate = z/3, CT = NA, CA = NA, CG = NA, TC = NA, TG = NA, TA = NA),  
                                                altReads = mutations[mutations$Patient == x, paste0(y,".AD_AltCount")],
-                                               seed = 123, nPermutation = 10000))) %>%
+                                               seed = 123, n_simulations = 10000))) %>%
            mutate( positivity = ifelse(Pvalue < 0.05, "Pos","Neg"))
 write.table(resultsClass, file = "/mnt/storage2/work/amjad/ctdna/ctDNAprediction.csv", col.names= T, row.names = F, sep = "\t", quote = F)
 
@@ -229,4 +384,21 @@ summary <- x %>% group_by(Patient) %>%
   
   mutate_if(is.numeric, ~round(.x,5))
 
-binom.test(6,800,0.0025, alternative = "greater")$p.value
+
+
+
+#' A function to plot distribution of a feature between train and test stratified by quake
+#' @param train training set data frame
+#' @param test test set data frame
+#' @param feature name of the feature
+#' @param binsPerRange a histogram binning parameter
+#' @return a ggplot
+#' @export
+plotDist <- function(sample1, color = "sample", binwidth = 2.5){
+  require(ggthemes)
+  require(ggplot2)
+
+  ggplot() + geom_freqpoly(data = sample1,aes_string(x = "size", y = "..density..", color = color), binwidth = binwidth) +
+    #scale_colour_wsj() +
+    theme_minimal()
+}    

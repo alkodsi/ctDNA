@@ -347,4 +347,24 @@ for ( rowMap <- iterCSV(outBamArrayCSVmerged) ) {
 
  }
 }
+
+val allVars = CSVListJoin(in = varsAnnotCSVFixed,
+      fileCol = "Patient")
+
+val allVarsFixed = CSVDplyr(csv1 = allVars,
+     function1 = """mutate(ID = paste(Patient, CHROM, POS, REF, ALT, sep = "_"))""",
+     function2 = """select(Patient, ID, everything())""",
+     function3 = """filter(!grepl(",",ALT))""")
+
+val allVarsFixedFilIndels = CSVDplyr(csv1 = allVarsFixed,
+     function1 = """mutate(maxVAF = pmax(FFPE.AD_VAF, ctDNA_0.AD_VAF, na.rm=T),
+                           maxAlt = pmax(FFPE.AD_AltCount, ctDNA_0.AD_AltCount, na.rm=T), 
+                           Type = ifelse(nchar(REF) == 1 & nchar(ALT) == 1, "SNV", ifelse(nchar(REF) > 1 & nchar(ALT) > 1, "MNP", "INDEL")))""",
+     function2 = """filter(Type %in% c("SNV","MNP") | (maxVAF > 0.01 & maxAlt > 15))""")
+
+val allVarsEasyFormat = CSVDplyr(csv1 = allVarsFixedFilIndels,
+     function1 = """select(Patient, CHROM, POS, REF, ALT, Func.refGene, Gene.refGene,ExonicFunc.refGene, ends_with("AD"))""")
+
+val allVarsExcel = CSV2Excel(csv = allVarsFixedFilIndels)
+
 }
