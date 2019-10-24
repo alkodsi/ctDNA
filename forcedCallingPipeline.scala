@@ -1,5 +1,5 @@
 #!/usr/bin/env anduril
-//$OPT --threads 8
+//$OPT --threads 16
 //$OPT -d /mnt/storage2/work/amjad/ctdna/result_forcedCallingPipeline/
 
 import anduril.builtin._
@@ -10,7 +10,8 @@ import anduril.sequencing._
 
 object ctdna{
 
-  val list = INPUT(path = "/mnt/storage2/work/amjad/ctdna/result_ctdnaAlignmentAll/bamCorrectedOutCSV/out.csv")
+  val list1 = INPUT(path = "/mnt/storage2/work/amjad/ctdna/result_ctdnaAlignmentAll/bamCorrectedOutCSV/out.csv")
+  val list2 = INPUT(path = "/mnt/storage2/work/amjad/ctdna/result_ctdnaAlignment4_5/bamCorrectedOutCSV/out.csv")
   val gnomad = INPUT(path = "/mnt/storage1/rawdata/resources/hg19/af-only-gnomad.raw.sites.b37.vcf.gz")
   val chain = INPUT(path = "/mnt/storage1/rawdata/resources/chains/b37tohg19.chain")
   val reference = INPUT(path = "/mnt/storage1/rawdata/resources/hg19/ucsc.hg19.fasta")
@@ -22,12 +23,15 @@ object ctdna{
 
   val picard = "/mnt/storage1/tools/picard/picard-2.18.26.jar"
   val fgbio = "/mnt/storage1/tools/fgbio/fgbio-0.7.0.jar"
-  val gatk = "/mnt/storage1/tools/gatk/gatk-4.1.3.0/gatk-package-4.1.3.0-local.jar"
+  val gatk = "/mnt/storage1/tools/gatk/gatk-4.1.4.0/gatk-package-4.1.4.0-local.jar"
   val java8 = "/usr/lib/jvm/java-8-openjdk-amd64/jre/bin/java"
   val annovar = "/mnt/storage1/tools/Annovar/annovar/"
   val annovardb = "/mnt/storage1/tools/Annovar/annovar/humandb/"
   val gatk3 = "/mnt/storage1/tools/gatk/gatk-3.8/GenomeAnalysisTK-3.8-1-0-gf15c1c3ef/GenomeAnalysisTK.jar"
   
+  val list = CSVDplyr(csv1 = list1, 
+       csv2 = list2,
+       function1 = """bind_rows(csv2)""")
 
   val targetsIL = BashEvaluate(var1 = targets,
        var2 = referenceDict,

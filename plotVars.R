@@ -218,3 +218,4 @@ vafs <- newMutect %>%
   as.data.frame()
 
 write.table(vafs, file = "/mnt/storage2/work/amjad/ctdna/plots/VAFs_threshold0.005.csv", col.names=T,row.names=F, sep = "\t", quote = F)
+

@@ -3,10 +3,12 @@ y <- read.table("/mnt/storage2/work/amjad/ctdna/result_newMutect2_2/allVarsFixed
 x <- read.table("/mnt/storage2/work/amjad/ctdna/VariantsVersions/variants_seq2.2_v1.csv",header=T,stringsAsFactors = F, sep = "\t")
 back <- read.table("/mnt/storage2/work/amjad/ctdna/result_newMutect2_2/backgroundAll/csvOut.csv", header = T, stringsAsFactors = F, sep = "\t")
 
-backgroundRates <- read.table("/mnt/storage2/work/amjad/ctdna/result_newMutectAll/backgroundAll/csvOut.csv", header = T, stringsAsFactors = F, sep = "\t")
-x <- read.table("/mnt/storage2/work/amjad/ctdna/result_newMutectAll/allVarsFixedFilIndels/out.csv",header=T,stringsAsFactors = F, sep = "\t")
+backgroundRates <- read.table("/mnt/storage2/work/amjad/ctdna/result_newMutectAll4_5/backgroundAll/csvOut.csv", header = T, stringsAsFactors = F, sep = "\t")
+y <- read.table("/mnt/storage2/work/amjad/ctdna/result_newMutectAll/allVarsFixedFilIndels/out.csv",header=T,stringsAsFactors = F, sep = "\t")
 x <- read.table("/mnt/storage2/work/amjad/ctdna/result_newMutectNova/allVarsFixedFilIndels/out.csv",header=T,stringsAsFactors = F, sep = "\t")
 x <- read.table("/mnt/storage2/work/amjad/ctdna/result_forcedCallingPipeline/allVarsFixedFilIndels/out.csv",header=T,stringsAsFactors = F, sep = "\t")
+x <- read.table("/mnt/storage2/work/amjad/ctdna/result_newMutectAll4_5/allVarsFixedFilIndels/out.csv",header=T,stringsAsFactors = F, sep = "\t")
+
 backgroundRates <- read.table("/mnt/storage2/work/amjad/ctdna/result_newMutectNova/backgroundAll/csvOut.csv", header = T, stringsAsFactors = F, sep = "\t")
 
 mutations <- read.table("/mnt/storage2/work/amjad/ctdna/code/ctdna/result_mutectDoubleCalling/allVarsFixedFilIndels/out.csv",header=T,stringsAsFactors = F, sep = "\t")
@@ -206,7 +208,7 @@ wbSamples <-  backgroundRates %>%
 mutations =  x %>% 
   filter(ctDNA_0.AD_VAF > 0.001 | FFPE.AD_VAF > 0.01) %>%  
   filter(nchar(REF) == 1 & nchar(ALT) == 1) %>%
-  filter(ECNT <= 5) %>%
+  filter(ECNT <= 10) %>%
   mutate(WB.PhasingID = ifelse(is.na(WB.PhasingID), ID, WB.PhasingID)) %>%
   filter(!duplicated(WB.PhasingID))
 
@@ -215,20 +217,36 @@ reference = BSgenome.Hsapiens.UCSC.hg19
 targets <- read.table("/mnt/storage1/rawdata/ctDNA/metadata/targets.bed", header = T, stringsAsFactors = F, sep= "\t")
 colnames(targets) <- c("chr","start","end","gene")
 
-samples <- data.frame(Sample = c("ctDNA_CHIC_100_2", "ctDNA_CHIC_102_2","ctDNA_CHIC_118_2","ctDNA_CHIC_123_2","ctDNA_CHIC_136_2","ctDNA_CHIC_143_2",
-                                 "ctDNA_CHIC_2_2","ctDNA_CHIC_27_3", "ctDNA_CHIC_28_2", "ctDNA_CHIC_29_2","ctDNA_CHIC_12_2","ctDNA_CHIC_15_1","ctDNA_CHIC_16_2",
-                                 "ctDNA_CHIC_3_2","ctDNA_CHIC_32_1","ctDNA_CHIC_35_2","ctDNA_CHIC_38_2","ctDNA_CHIC_4_2","ctDNA_CHIC_45_3","ctDNA_CHIC_49_2",
-                                 "ctDNA_CHIC_52_2","ctDNA_CHIC_61_2","ctDNA_CHIC_63_2","ctDNA_CHIC_65_2","ctDNA_CHIC_70_2","ctDNA_CHIC_72_2","ctDNA_CHIC_73_2",
-                                 "ctDNA_CHIC_74_2","ctDNA_CHIC_79_2","ctDNA_CHIC_88_2","ctDNA_CHIC_91_2","ctDNA_CHIC_92_2", 
-                                 "ctDNA_CHIC_94_2", "ctDNA_CHIC_97_2","ctDNA_CHIC_99_2")) %>%
+samples <- data.frame(Sample = c(#"ctDNA_CHIC_100_2", "ctDNA_CHIC_102_2","ctDNA_CHIC_118_2","ctDNA_CHIC_123_2","ctDNA_CHIC_136_2","ctDNA_CHIC_143_2",
+                                 #"ctDNA_CHIC_2_2","ctDNA_CHIC_27_3", "ctDNA_CHIC_28_2", "ctDNA_CHIC_29_2","ctDNA_CHIC_12_2","ctDNA_CHIC_15_1","ctDNA_CHIC_16_2",
+                                 #"ctDNA_CHIC_3_2","ctDNA_CHIC_32_1","ctDNA_CHIC_35_2","ctDNA_CHIC_38_2","ctDNA_CHIC_4_2","ctDNA_CHIC_45_3","ctDNA_CHIC_49_2",
+                                 #"ctDNA_CHIC_52_2","ctDNA_CHIC_61_2","ctDNA_CHIC_63_2","ctDNA_CHIC_65_2","ctDNA_CHIC_70_2","ctDNA_CHIC_72_2","ctDNA_CHIC_73_2",
+                                 #"ctDNA_CHIC_74_2","ctDNA_CHIC_79_2","ctDNA_CHIC_88_2","ctDNA_CHIC_91_2","ctDNA_CHIC_92_2", 
+                                 #"ctDNA_CHIC_94_2", "ctDNA_CHIC_97_2","ctDNA_CHIC_99_2",
+                                 "ctDNA_CHIC_10_2", "ctDNA_CHIC_112_2","ctDNA_CHIC_113_2","ctDNA_CHIC_120_2",
+                                 "ctDNA_CHIC_122_2", "ctDNA_CHIC_126_2","ctDNA_CHIC_129_2", "ctDNA_CHIC_141_2", "ctDNA_CHIC_14_2","ctDNA_CHIC_18_2",
+                                 "ctDNA_CHIC_1_2", "ctDNA_CHIC_25_2", "ctDNA_CHIC_33_2", "ctDNA_CHIC_34_2", "ctDNA_CHIC_36_2",
+                                 "ctDNA_CHIC_53_2", "ctDNA_CHIC_54_2", "ctDNA_CHIC_57_2","ctDNA_CHIC_60_2", "ctDNA_CHIC_67_2",
+                                 "ctDNA_CHIC_81_2", "ctDNA_CHIC_84_2", "ctDNA_CHIC_89_2")) %>%
            mutate(outcome = ifelse(Sample %in% c("ctDNA_CHIC_100_2", "ctDNA_CHIC_102_2","ctDNA_CHIC_136_2","ctDNA_CHIC_143_2","ctDNA_CHIC_27_3","ctDNA_CHIC_15_1",
                                                  "ctDNA_CHIC_3_2","ctDNA_CHIC_32_1","ctDNA_CHIC_4_2","ctDNA_CHIC_52_2","ctDNA_CHIC_72_2","ctDNA_CHIC_74_2",
                                                  "ctDNA_CHIC_97_2","ctDNA_CHIC_99_2"), "relapse","cured"))
 
+samples <- data.frame(Sample = c("ctDNA_CHIC_100_2", "ctDNA_CHIC_102_2","ctDNA_CHIC_118_2","ctDNA_CHIC_123_2","ctDNA_CHIC_136_2","ctDNA_CHIC_143_2",
+  "ctDNA_CHIC_2_2","ctDNA_CHIC_27_3", "ctDNA_CHIC_28_2", "ctDNA_CHIC_29_2","ctDNA_CHIC_12_2","ctDNA_CHIC_15_1","ctDNA_CHIC_16_2",
+  "ctDNA_CHIC_3_2","ctDNA_CHIC_32_1","ctDNA_CHIC_35_2","ctDNA_CHIC_38_2","ctDNA_CHIC_4_2","ctDNA_CHIC_45_3","ctDNA_CHIC_49_2",
+  "ctDNA_CHIC_52_2","ctDNA_CHIC_61_2","ctDNA_CHIC_63_2","ctDNA_CHIC_65_2","ctDNA_CHIC_70_2","ctDNA_CHIC_72_2","ctDNA_CHIC_73_2",
+  "ctDNA_CHIC_74_2","ctDNA_CHIC_79_2","ctDNA_CHIC_88_2","ctDNA_CHIC_91_2","ctDNA_CHIC_92_2", 
+  "ctDNA_CHIC_94_2", "ctDNA_CHIC_97_2","ctDNA_CHIC_99_2")) %>%
+  mutate(outcome = ifelse(Sample %in% c("ctDNA_CHIC_100_2", "ctDNA_CHIC_102_2","ctDNA_CHIC_136_2","ctDNA_CHIC_143_2","ctDNA_CHIC_27_3","ctDNA_CHIC_15_1",
+                                        "ctDNA_CHIC_3_2","ctDNA_CHIC_32_1","ctDNA_CHIC_4_2","ctDNA_CHIC_52_2","ctDNA_CHIC_72_2","ctDNA_CHIC_74_2",
+                                        "ctDNA_CHIC_97_2","ctDNA_CHIC_99_2"), "relapse","cured"))
+
 samples$p = future_map2_dbl(samples$Sample, map_chr(strsplit(as.character(samples$Sample),"_"), ~paste(.x[2],.x[3], sep = "_")), 
-    ~test_ctDNA(mutations[mutations$Patient == .y,], reference = reference, targets = targets, 
-         bam = paste0("/mnt/storage2/work/amjad/ctdna/result_ctdnaAlignmentAll/consensusRecal_",.x,"/",.x,"_consensusRecal.bam"),
-         by_substitution = F, bam_list = bams[!grepl(.x, bams)], min_samples = 2, min_alt_reads = 1)$pvalue)
+                            ~test_ctDNA(mutations[mutations$Patient == .y,], reference = reference, targets = targets, 
+                                        bam = paste0("/mnt/storage2/work/amjad/ctdna/result_ctdnaAlignmentAll/consensusRecal_",.x,"/",.x,"_consensusRecal.bam"),
+                                        bam_list = bams, by_substitution = F, ID_column = "ctDNA_2.PhasingID", use_unique_molecules = F,min_samples = 4, min_alt_reads = 2 )$pvalue,
+                            .progress = T)
 colAUC(samples$p, samples$outcome)
 
 test_ctDNA(mutations[mutations$Patient == "CHIC_97",], reference = reference, targets = targets, 
@@ -402,3 +420,17 @@ plotDist <- function(sample1, color = "sample", binwidth = 2.5){
     #scale_colour_wsj() +
     theme_minimal()
 }    
+
+
+list <- read.table("/mnt/storage2/work/amjad/ctdna/result_newMutectAll4_5/list/out.csv", header = T, stringsAsFactors = F, sep = "\t")
+targets <- read.table("/mnt/storage1/rawdata/ctDNA/metadata/targets.bed", header = T, stringsAsFactors = F, sep= "\t")
+targets$start = targets$start - 100
+colnames(targets) <- c("chr","start","end","gene")
+summaries <- future_map(list[grepl("ctDNA",list$Key),"File"], ~ summarize_fragment_size(bam = .x, regions = targets), .progress = T)
+frag_matrix <- summaries %>% purrr::reduce(inner_join, by = "Region")
+
+bam <- "/mnt/storage2/work/amjad/ctdna/result_ctdnaAlignmentAll/consensusRecal_ctDNA_CHIC_100_0/ctDNA_CHIC_100_0_consensusRecal.bam"
+estimate_ctDNA_level(mutations = mutations[mutations$Patient == "CHIC_100",],
+                      bam = "/mnt/storage2/work/amjad/ctdna/result_ctdnaAlignmentAll/consensusRecal_ctDNA_CHIC_100_0/ctDNA_CHIC_100_0_consensusRecal.bam",
+                      reference = reference ,targets = targets, vaf_column = "ctDNA_0.AD_VAF", ref_reads_column = "ctDNA_0.AD_RefCount", 
+                      alt_reads_column = "ctDNA_0.AD_AltCount")
