@@ -1,6 +1,6 @@
 #!/usr/bin/env anduril
 //$OPT --threads 14
-//$OPT -d /mnt/storage2/work/amjad/ctdna/result_newMutectAll4_5
+//$OPT -d /mnt/storage2/work/amjad/ctdna/result_newMutectAll4_5v2
 
 import anduril.builtin._
 import anduril.tools._
@@ -12,6 +12,7 @@ object ctdna{
 
   val list1 = INPUT(path = "/mnt/storage2/work/amjad/ctdna/result_ctdnaAlignmentAll/bamCorrectedOutCSV/out.csv")
   val list2 = INPUT(path = "/mnt/storage2/work/amjad/ctdna/result_ctdnaAlignment4_5/bamCorrectedOutCSV/out.csv")
+  val list3 = INPUT(path = "/mnt/storage2/work/amjad/ctdna/result_ctdnaAlignmentAllv2/bamCorrectedOutCSV/out.csv")
   val gnomad = INPUT(path = "/mnt/storage1/rawdata/resources/hg19/af-only-gnomad.raw.sites.b37.vcf.gz")
   val chain = INPUT(path = "/mnt/storage1/rawdata/resources/chains/b37tohg19.chain")
   val reference = INPUT(path = "/mnt/storage1/rawdata/resources/hg19/ucsc.hg19.fasta")
@@ -59,12 +60,12 @@ object ctdna{
   hg38Image._filename("out1","referencehg38.fasta.img")
 
 
-  val listTumors = CSVDplyr(csv1 = list,
+  val listTumors = CSVDplyr(csv1 = list3,
        function1 = """mutate(Patient = sapply(strsplit(Key,"_"),function(x)paste(x[2],x[3],sep="_")))""",
        function2 = """filter(!grepl("WB",Key))""",
        function3 = """select(KeyTumor = Key, Tumor = File, Patient)""")
   
-  val listNormals = CSVDplyr(csv1 = list,
+  val listNormals = CSVDplyr(csv1 = list1,
        function1 = """mutate(Patient = sapply(strsplit(Key,"_"),function(x)paste(x[2],x[3],sep="_")))""",
        function2 = """filter(grepl("WB",Key))""",
        function3 = """select(KeyNormal = Key,Normal = File, Patient)""")
@@ -374,60 +375,5 @@ val allVarsEasyFormat = CSVDplyr(csv1 = allVarsFixedFilIndels,
 
 val allVarsExcel = CSV2Excel(csv = allVarsFixedFilIndels)
 
-
-// Estimate the background
-// --------------------------------------------
-
-/*
-val oneVCF = BashEvaluate(var1 = reference,
-     array1 = varsPassOut,
-     script = s"$java8 -jar $gatk3 -T CombineVariants -R @var1@ -o @out1@ -genotypeMergeOptions UNIQUIFY " +
-     """ $( paste -d ' ' <(getarraykeys array1) <(getarrayfiles array1)  | sed 's,^, --variant:,' | tr -d '\\\n' ) """)
-oneVCF._filename("out1","variants.vcf")   
-*/
-
-val background = NamedMap[BashEvaluate]("background")
-val bamIn = NamedMap[INPUT]("bamIn")
-val backgroundCSV = NamedMap[BashEvaluate]("backgroundCSV")
-val backgroundCSVFixed = NamedMap[CSVDplyr]("backgroundCSVFixed")
-
-for ( rowMap <- iterCSV(list) ) { 
-  
-  val sample = rowMap("Key")
-  bamIn(sample) = INPUT(path = rowMap("File"))
-
-  background(sample) = BashEvaluate(
-        var1 = bamIn(sample),
-        var2 = reference,
-        var3 = targetsIL.out1,
-        script = s"$java8 -jar $gatk Mutect2 -R @var2@ -I @var1@ -O @out1@ --max-reads-per-alignment-start 0 -L @var3@ -ERC BP_RESOLUTION  --bam-output @out2@ ")
-  background(sample)._filename("out1", sample + "_background.vcf.gz")
-  background(sample)._filename("out2", sample + "_background.bam")
- 
-  backgroundCSV(sample) = BashEvaluate(var1 = reference,
-        var2 = background(sample).out1,
-        param1 = gatk,
-        param2 = java8,
-        script = """ 
-                   @param2@ -jar @param1@ VariantsToTable \
-                    -R @var1@ -V @var2@ -O @out1@ \
-                    -F CHROM -F POS -F REF -F ALT -F ID \
-                    -GF AD -GF DP -GF TLOD 
-                     """)
-
- backgroundCSVFixed(sample) = CSVDplyr(csv1 = backgroundCSV(sample).out1,
-       script = "library(tidyr)",
-       function1 = """filter(ALT == "<NON_REF>")""",
-       function2 = s"""separate($sample.AD, into = c("REFreads","ALTreads"), convert = T)""",
-       function3 = s"""select(CHROM, POS, REF, ALT, REFreads, ALTreads, Depth = $sample.DP, TLOD = $sample.TLOD)""",
-       function4 = """filter(TLOD < (0))""")
-}
-
-
- val backgroundAll = Rpipe(array1 = backgroundCSVFixed,
-      function1 = """csvOut <- data.frame(Sample = names(array1), Rate = map_dbl(array1, ~ sum(.x$ALTreads)/sum(as.numeric(.x$Depth))))""")
-
-// ------------------------------------------------------------
-// Background estimation ends here
 
 }

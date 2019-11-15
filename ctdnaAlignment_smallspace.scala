@@ -1,5 +1,5 @@
 #!/usr/bin/env anduril
-//$OPT --threads 8
+//$OPT --threads 10
 //$OPT -d /mnt/storage2/work/amjad/ctdna/result_ctdnaAlignmentAllv2/
 
 import anduril.builtin._
@@ -97,36 +97,28 @@ object ctdna{
     aligned(readGroup) = BashEvaluate(var1 = reads(readGroup),
         var2 = mates(readGroup),
         var3 = reference,
+        var4 = umi(readGroup),
         param1 = readGroup,
         param2 = Sample,
-        script = s"""
-                 $bwa mem -M -t 2 -R "@RG\\tID:@param1@\\tPL:ILLUMINA\\tLB:Library1\\tSM:@param2@" @var3@ @var1@ @var2@ > @out1@
+        param3 = picard,
+        param4 = bwa,
+        param5 = fgbio,
+        script = """
+                 @param4@ mem -M -t 2 -R "@RG\\tID:@param1@\\tPL:ILLUMINA\\tLB:Library1\\tSM:@param2@" @var3@ @var1@ @var2@ > @out1@
+                 java -jar @param5@ AnnotateBamWithUmis -i @out1@ -f @var4@ -o @out2@
+                 rm @out1@
+                 touch @out1@
+                 java -Xmx4g -jar @param3@ SortSam VALIDATION_STRINGENCY=SILENT SORT_ORDER=coordinate \
+                   CREATE_INDEX=true CREATE_MD5_FILE=true INPUT=@out2@ OUTPUT=@out3@ TMP_DIR=$( gettempdir )
+                 rm @out2@
+                 touch @out2@
                  """)
-    aligned(readGroup)._keep = false
     aligned(readGroup)._filename("out1","aligned.bam")
-   // aligned(readGroup)._execute = "once"
+    aligned(readGroup)._filename("out2","alignedumi.bam")
+    aligned(readGroup)._filename("out3","alignedSorted.bam")
 
-    // attach Umis to aligned bam file from a fastq
-    alignedUmi(readGroup) = BashEvaluate(var1 = aligned(readGroup).out1,
-        var2 = umi(readGroup),
-        script = s"""
-                  java -jar $fgbio AnnotateBamWithUmis -i @var1@ -f @var2@ -o @out1@ 
-                  """)
-    alignedUmi(readGroup)._keep = false
-    alignedUmi(readGroup)._filename("out1","alignedUmi.bam")
-  //  alignedUmi(readGroup)._execute = "once"
 
-    // sort reads by coordinates
-    sorted(readGroup) = BashEvaluate(var1 = alignedUmi(readGroup).out1,
-        var2   = reference,
-        param1 = picard,
-        script = """java -Xmx4g -jar @param1@ SortSam VALIDATION_STRINGENCY=SILENT SORT_ORDER=coordinate \
-               CREATE_INDEX=true CREATE_MD5_FILE=true INPUT=@var1@ OUTPUT=@out1@ TMP_DIR=$( gettempdir )
-               """)
-    sorted(readGroup)._filename("out1","sorted.bam")
-   // sorted(readGroup)._execute = "once"
-  
-    sortedOut(readGroup) = sorted(readGroup).out1
+    sortedOut(readGroup) = aligned(readGroup).out3
    }
 
   val bamCSV = Array2CSV(in = sortedOut)

@@ -241,17 +241,16 @@ samples <- data.frame(Sample = c("ctDNA_CHIC_100_2", "ctDNA_CHIC_102_2","ctDNA_C
   mutate(outcome = ifelse(Sample %in% c("ctDNA_CHIC_100_2", "ctDNA_CHIC_102_2","ctDNA_CHIC_136_2","ctDNA_CHIC_143_2","ctDNA_CHIC_27_3","ctDNA_CHIC_15_1",
                                         "ctDNA_CHIC_3_2","ctDNA_CHIC_32_1","ctDNA_CHIC_4_2","ctDNA_CHIC_52_2","ctDNA_CHIC_72_2","ctDNA_CHIC_74_2",
                                         "ctDNA_CHIC_97_2","ctDNA_CHIC_99_2"), "relapse","cured"))
-
-samples$p = future_map2_dbl(samples$Sample, map_chr(strsplit(as.character(samples$Sample),"_"), ~paste(.x[2],.x[3], sep = "_")), 
+results = future_map2_dfr(samples$Sample, map_chr(strsplit(as.character(samples$Sample),"_"), ~paste(.x[2],.x[3], sep = "_")), 
                             ~test_ctDNA(mutations[mutations$Patient == .y,], reference = reference, targets = targets, 
                                         bam = paste0("/mnt/storage2/work/amjad/ctdna/result_ctdnaAlignmentAll/consensusRecal_",.x,"/",.x,"_consensusRecal.bam"),
-                                        bam_list = bams, by_substitution = F, ID_column = "ctDNA_2.PhasingID", use_unique_molecules = F,min_samples = 4, min_alt_reads = 2 )$pvalue,
+                                        by_substitution = F, ID_column = "ctDNA_1.PhasingID",min_samples = 4, min_alt_reads = 1 ),
                             .progress = T)
 colAUC(samples$p, samples$outcome)
 
 test_ctDNA(mutations[mutations$Patient == "CHIC_97",], reference = reference, targets = targets, 
            bam = "/mnt/storage2/work/amjad/ctdna/result_ctdnaAlignmentAll/consensusRecal_ctDNA_CHIC_97_2/ctDNA_CHIC_97_2_consensusRecal.bam",
-           bam_list = bams)
+           bam_list = bams[bamSamples != "ctDNA_CHIC_97_2"], ID_column = "ctDNA_1.PhasingID", min_samples = 6, min_alt_reads = 1)
 
 test_ctDNA(mutations[mutations$Patient == "CHIC_91",], reference = reference, targets = targets, 
            bam = "/mnt/storage2/work/amjad/ctdna/result_newMutectAll/vars_CHIC_91/CHIC_91.bam",tag = "ID1.3", by_substitution = F, min_base_quality = 10)
@@ -430,7 +429,20 @@ summaries <- future_map(list[grepl("ctDNA",list$Key),"File"], ~ summarize_fragme
 frag_matrix <- summaries %>% purrr::reduce(inner_join, by = "Region")
 
 bam <- "/mnt/storage2/work/amjad/ctdna/result_ctdnaAlignmentAll/consensusRecal_ctDNA_CHIC_100_0/ctDNA_CHIC_100_0_consensusRecal.bam"
-estimate_ctDNA_level(mutations = mutations[mutations$Patient == "CHIC_100",],
-                      bam = "/mnt/storage2/work/amjad/ctdna/result_ctdnaAlignmentAll/consensusRecal_ctDNA_CHIC_100_0/ctDNA_CHIC_100_0_consensusRecal.bam",
+a = estimate_ctDNA_level(mutations = mutations[mutations$Patient == "CHIC_70",],
+                      bam = "/mnt/storage2/work/amjad/ctdna/result_ctdnaAlignmentAll/consensusRecal_ctDNA_CHIC_70_0/ctDNA_CHIC_70_0_consensusRecal.bam",
                       reference = reference ,targets = targets, vaf_column = "ctDNA_0.AD_VAF", ref_reads_column = "ctDNA_0.AD_RefCount", 
                       alt_reads_column = "ctDNA_0.AD_AltCount")
+
+list <- read.table("/mnt/storage2/work/amjad/ctdna/result_ctdnaAlignmentAll/bamCorrectedOutCSV/out.csv",header=T,stringsAsFactors=F,sep="\t")
+samples <-  list[grepl("ctDNA",list[,1]) & grepl("_0$",list[,1]) ,1]
+bams <- list[grepl("ctDNA",list[,1]) & grepl("_0$",list[,1]) ,2]
+patients = map_chr(str_split(samples, "_"), ~paste(.x[2], .x[3], sep = "_"))
+
+vafs <- future_map2_dbl(patients, bams, ~estimate_ctDNA_level(mutations = mutations[mutations$Patient == .x,], bam = .y, reference = reference,
+                                                       targets = targets, vaf_column = "ctDNA_0.AD_VAF", ref_reads_column = "ctDNA_0.AD_RefCount", 
+                                                       alt_reads_column = "ctDNA_0.AD_AltCount", only_SNVs = T, use_clustering = F)$VAF, .progress = T)
+
+
+mutations <- mutations %>% mutate(motif = ifelse(substitution %in% c("CT","CG","CA") & substring(context,1,1) %in% c("A","G") & substring(context,3,3) %in% c("A","C","T"), "RCH",
+       ifelse(substitution %in% c("TA","TC","TG")  & substring(context,3,3) %in% c("T","A"),"TW","Other")))

@@ -27,7 +27,8 @@ bamSamples <- list[grepl("ctDNA",list[,1]) & grepl("_2$",list[,1]) & !list[,1] %
 plan(multiprocess)
 auc_phasing <- c()
 auc_noPhasing <- c()
-ecnt <- seq(10, 50, by = 5)
+#ecnt <- seq(10, 50, by = 5)
+ecnt <- c(5:12)
 
 for(i in ecnt){
   mutations =  x %>% 
@@ -35,10 +36,10 @@ for(i in ecnt){
     filter(nchar(REF) == 1 & nchar(ALT) == 1) %>%
     filter(ECNT <= i)
   
-  samples$p = future_map2_dbl(samples$Sample, map_chr(strsplit(as.character(samples$Sample),"_"), ~paste(.x[2],.x[3], sep = "_")), 
+  results = future_map2_dfr(samples$Sample, map_chr(strsplit(as.character(samples$Sample),"_"), ~paste(.x[2],.x[3], sep = "_")), 
                               ~test_ctDNA(mutations[mutations$Patient == .y,], reference = reference, targets = targets, 
                                           bam = paste0("/mnt/storage2/work/amjad/ctdna/result_ctdnaAlignmentAll/consensusRecal_",.x,"/",.x,"_consensusRecal.bam"),
-                                          bam_list = bams[bamSamples!=.x], by_substitution = F, ID_column = "ctDNA_1.PhasingID", use_unique_molecules = F,min_samples = 4, min_alt_reads = 1 )$pvalue,
+                                          bam_list = bams[bamSamples!=.x],by_substitution = F, ID_column = "ctDNA_1.PhasingID", min_samples = 3, min_alt_reads = 1 ),
                               .progress = T)
   
   auc_phasing <- c(auc_phasing, colAUC(samples$p, samples$outcome)[1,1])
@@ -46,7 +47,7 @@ for(i in ecnt){
   samples$p = future_map2_dbl(samples$Sample, map_chr(strsplit(as.character(samples$Sample),"_"), ~paste(.x[2],.x[3], sep = "_")), 
                               ~test_ctDNA(mutations[mutations$Patient == .y,], reference = reference, targets = targets, 
                                           bam = paste0("/mnt/storage2/work/amjad/ctdna/result_ctdnaAlignmentAll/consensusRecal_",.x,"/",.x,"_consensusRecal.bam"),
-                                          bam_list = bams[bamSamples!=.x], by_substitution = F,  use_unique_molecules = F,min_samples = 4, min_alt_reads = 1 )$pvalue,
+                                          bam_list = bams[bamSamples!=.x], by_substitution = F,  use_unique_molecules = F,min_samples = 6, min_alt_reads = 1 )$pvalue,
                               .progress = T)
  
   auc_noPhasing <- c(auc_noPhasing, colAUC(samples$p, samples$outcome)[1,1])
