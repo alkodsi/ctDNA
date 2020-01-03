@@ -4,11 +4,23 @@ library(furrr)
 library(BSgenome.Hsapiens.UCSC.hg19)
 library(caTools)
 
-x <- read.table("/mnt/storage2/work/amjad/ctdna/result_newMutectAll4_5/allVarsFixedFilIndels/out.csv",header=T,stringsAsFactors = F, sep = "\t")
+x <- read.table("/mnt/storage2/work/amjad/ctdna/result_newMutectAll1_6//allVarsFixedFilIndels/out.csv",header=T,stringsAsFactors = F, sep = "\t")
 list <- read.table("/mnt/storage2/work/amjad/ctdna/result_newMutectAll4_5/list/out.csv",header=T,stringsAsFactors=F,sep="\t")
 reference <- BSgenome.Hsapiens.UCSC.hg19
 targets <- read.table("/mnt/storage1/rawdata/ctDNA/metadata/targets.bed", header = T, stringsAsFactors = F, sep= "\t")
 colnames(targets) <- c("chr","start","end","gene")
+
+
+motif <- ctDNAtools::extract_trinucleotide_context(filter(x, Type == "SNV"), reference = reference) %>%
+        mutate(Motif = ifelse(substring(substitution, 1, 1) == "C" & substring(context,1,1) %in% c("A","G") & substring(context, 3, 3) %in% c("C","T","A"), "RCH",
+                            ifelse(substring(substitution, 1, 1) == "T" &  substring(context, 3, 3) %in% c("T", "A"), "TW", "Other")))
+
+mut <- x %>% filter(Type == "SNV") %>%
+  mutate(Motif = motif$Motif) 
+
+counts <- as.data.frame.matrix(table(mut$Patient, mut$Motif)) %>%
+  rownames_to_column("Patient") %>%
+  mutate(ratio  = (TW + 1)/(RCH + 1))
 
 samples <- data.frame(Sample = c("ctDNA_CHIC_100_2", "ctDNA_CHIC_102_2","ctDNA_CHIC_118_2","ctDNA_CHIC_123_2","ctDNA_CHIC_136_2","ctDNA_CHIC_143_2",
                                  "ctDNA_CHIC_2_2","ctDNA_CHIC_27_3", "ctDNA_CHIC_28_2", "ctDNA_CHIC_29_2","ctDNA_CHIC_12_2","ctDNA_CHIC_15_1","ctDNA_CHIC_16_2",
@@ -32,14 +44,14 @@ ecnt <- c(5:12)
 
 for(i in ecnt){
   mutations =  x %>% 
-    filter(ctDNA_0.AD_VAF > 0.001 | FFPE.AD_VAF > 0.01) %>%  
+    filter(ctDNA_0.AD_VAF > 0.005 | FFPE.AD_VAF > 0.01) %>%  
     filter(nchar(REF) == 1 & nchar(ALT) == 1) %>%
     filter(ECNT <= i)
   
-  results = future_map2_dfr(samples$Sample, map_chr(strsplit(as.character(samples$Sample),"_"), ~paste(.x[2],.x[3], sep = "_")), 
+  results2 = future_map2_dfr(samples$Sample, map_chr(strsplit(as.character(samples$Sample),"_"), ~paste(.x[2],.x[3], sep = "_")), 
                               ~test_ctDNA(mutations[mutations$Patient == .y,], reference = reference, targets = targets, 
                                           bam = paste0("/mnt/storage2/work/amjad/ctdna/result_ctdnaAlignmentAll/consensusRecal_",.x,"/",.x,"_consensusRecal.bam"),
-                                          bam_list = bams[bamSamples!=.x],by_substitution = F, ID_column = "ctDNA_1.PhasingID", min_samples = 3, min_alt_reads = 1 ),
+                                          by_substitution = F, ID_column = "ctDNA_0.PhasingID", min_samples = 3, min_alt_reads = 1 ),
                               .progress = T)
   
   auc_phasing <- c(auc_phasing, colAUC(samples$p, samples$outcome)[1,1])

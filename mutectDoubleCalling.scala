@@ -1,5 +1,6 @@
 #!/usr/bin/env anduril
 //$OPT --threads 20
+//$OPT -d /mnt/storage2/work/amjad/ctdna/result_mutectDoubleCalling
 
 import anduril.builtin._
 import anduril.tools._
@@ -9,7 +10,8 @@ import anduril.sequencing._
 
 object ctdna{
 
-  val list = INPUT(path = "/mnt/storage2/work/amjad/ctdna/result_ctdnaAlignmentAll/bamCorrectedOutCSV/out.csv")
+  val list1 = INPUT(path = "/mnt/storage2/work/amjad/ctdna/result_ctdnaAlignmentAll/bamCorrectedOutCSV/out.csv")
+  val list2 = INPUT(path = "/mnt/storage2/work/amjad/ctdna/result_ctdnaAlignment4_5/bamCorrectedOutCSV/out.csv")
   val gnomad = INPUT(path = "/mnt/storage1/rawdata/resources/hg19/af-only-gnomad.raw.sites.b37.vcf.gz")
   val chain = INPUT(path = "/mnt/storage1/rawdata/resources/chains/b37tohg19.chain")
   val reference = INPUT(path = "/mnt/storage1/rawdata/resources/hg19/ucsc.hg19.fasta")
@@ -21,12 +23,16 @@ object ctdna{
 
   val picard = "/mnt/storage1/tools/picard/picard-2.18.26.jar"
   val fgbio = "/mnt/storage1/tools/fgbio/fgbio-0.7.0.jar"
-  val gatk = "/mnt/storage1/tools/gatk/gatk-4.1.3.0/gatk-package-4.1.3.0-local.jar"
+  val gatk = "/mnt/storage1/tools/gatk/gatk-4.1.4.0/gatk-package-4.1.4.0-local.jar"
   val java8 = "/usr/lib/jvm/java-8-openjdk-amd64/jre/bin/java"
   val annovar = "/mnt/storage1/tools/Annovar/annovar/"
   val annovardb = "/mnt/storage1/tools/Annovar/annovar/humandb/"
   val gatk3 = "/mnt/storage1/tools/gatk/gatk-3.8/GenomeAnalysisTK-3.8-1-0-gf15c1c3ef/GenomeAnalysisTK.jar"
   
+
+  val list = CSVDplyr(csv1 = list1, 
+       csv2 = list2,
+       function1 = """bind_rows(csv2)""")
 
   val targetsIL = BashEvaluate(var1 = targets,
        var2 = referenceDict,
@@ -49,9 +55,6 @@ object ctdna{
   exachg19._filename("out1","Exac_hg19.vcf.gz")
   exachg19._filename("out2","rejected.vcf.gz")
   
-  val hg38Image = BashEvaluate(var1 = hg38reference,
-        script = s"$java8 -jar $gatk BwaMemIndexImageCreator -I @var1@ -O @out1@")
-  hg38Image._filename("out1","referencehg38.fasta.img")
 
   val listTumors = CSVDplyr(csv1 = list,
        function1 = """mutate(Patient = sapply(strsplit(Key,"_"),function(x)paste(x[2],x[3],sep="_")))""",
@@ -68,7 +71,8 @@ object ctdna{
         script = """library(plyr)""",
         function1 = """plyr::join(csv2,by="Patient")""",
         function2 = """filter(!is.na(KeyNormal))""")
-  
+ 
+ /* 
   val listMatchedSelSamples = CSVDplyr(csv1 = listMatched,
      function1 = """filter(!Patient %in% c("CHIC_52","CHIC_12","CHIC_15","CHIC_16","CHIC_28","CHIC_29","CHIC_38","CHIC_39","CHIC_42","CHIC_49","CHIC_73","CHIC_91","CHIC_94","CHIC_99") & grepl("_0$",KeyTumor) | 
                     (Patient %in% c("CHIC_52","CHIC_12","CHIC_15","CHIC_16","CHIC_28","CHIC_29","CHIC_38","CHIC_39","CHIC_42","CHIC_49","CHIC_73","CHIC_91","CHIC_94","CHIC_99") & grepl("FFPE",KeyTumor)) | 
@@ -76,7 +80,10 @@ object ctdna{
                     (Patient %in% c("CHIC_2","CHIC_27","CHIC_45") & grepl("_3$", KeyTumor)) |
                     (!Patient %in% c("CHIC_2","CHIC_27","CHIC_45") & grepl("_2$", KeyTumor)))""")
 
+*/
 
+ val listMatchedSelSamples = CSVDplyr(csv1 = listMatched,
+       function1 = """filter(grepl("_0$", KeyTumor) | grepl("FFPE", KeyTumor))""")
 
   val gnomadhg19 = BashEvaluate(var1 = gnomad,
        var2 = chain,
@@ -240,6 +247,7 @@ val varsAnnotCSV           = NamedMap[BashEvaluate]("varsAnnotCSV")
 val varsAnnotCSVFixed      = NamedMap[CSVDplyr]("varsAnnotCSVFixed")
 val varsPassOut            = NamedMap[Any]("varsPassOut")
 val varsFilteredAlignments = NamedMap[BashEvaluate]("varsFilteredAlignments")
+val varsAnnotFixed         = NamedMap[BashEvaluate]("varsAnnotFixed")
 
 for ( rowMap <- iterCSV(outBamArrayCSVmerged) ) { 
   val patient = rowMap("Key")
@@ -264,7 +272,7 @@ for ( rowMap <- iterCSV(outBamArrayCSVmerged) ) {
         var5 = targetsIL.out1,
         param1 = keyNormal,
         script = s"$java8 -jar $gatk Mutect2 -R @var2@ -I @var1@ -O @out1@ --max-reads-per-alignment-start 0 --pcr-indel-model HOSTILE --bam-output @out3@ " +
-                  " --germline-resource @var4@ --panel-of-normals @var3@ -L @var5@ -ip 300 --f1r2-tar-gz @out2@ -normal @param1@" +
+                  " --germline-resource @var4@ --panel-of-normals @var3@ -L @var5@ -ip 300 --f1r2-tar-gz @out2@ -normal @param1@ --max-mnp-distance 0 " +
                   """ $( paste -d ' ' <(getarrayfiles array1)  | sed 's,^, -I ,' | tr -d '\\\n' ) """)        
   vars(patient)._filename("out1", patient + "_rawVariants.vcf.gz")
   vars(patient)._filename("out2", patient + "_f1r2.tar.gz")
@@ -280,7 +288,7 @@ for ( rowMap <- iterCSV(outBamArrayCSVmerged) ) {
         var5 = targetsIL.out1,
         param1 = keyNormal,
         script = s"$java8 -jar $gatk Mutect2 -R @var2@ -O @out1@ --max-reads-per-alignment-start 0 --pcr-indel-model HOSTILE --bam-output @out3@ " +
-                  " --germline-resource @var4@ --panel-of-normals @var3@ -L @var5@ -ip 300 --f1r2-tar-gz @out2@ " +
+                  " --germline-resource @var4@ --panel-of-normals @var3@ -L @var5@ -ip 300 --f1r2-tar-gz @out2@ --max-mnp-distance 0 " +
                   """ $( paste -d ' ' <(getarrayfiles array1)  | sed 's,^, -I ,' | tr -d '\\\n' ) """)        
   vars(patient)._filename("out1", patient + "_rawVariants.vcf.gz")
   vars(patient)._filename("out2", patient + "_f1r2.tar.gz")
@@ -300,8 +308,8 @@ for ( rowMap <- iterCSV(outBamArrayCSVmerged) ) {
      array1 = contamByPatient(patient),
      array2 = segsByPatient(patient),
      script = s"$java8 -jar $gatk FilterMutectCalls -R @var3@ -V @var1@  -O @out1@ --stats @var1@.stats --filtering-stats @out2@ " +
-               " --max-events-in-region 50 --min-median-read-position 15  --distance-on-haplotype 300 -L @var4@ -ip 300 -ob-priors @var2@ " +
-             // """ $( paste -d ' ' <(getarrayfiles array1)  | sed 's,^, --contamination-table ,' | tr -d '\\\n' ) """ +
+               " --max-events-in-region 50 --min-median-read-position 15  -L @var4@ -ip 300 -ob-priors @var2@ " +
+              """ $( paste -d ' ' <(getarrayfiles array1)  | sed 's,^, --contamination-table ,' | tr -d '\\\n' ) """ +
               """ $( paste -d ' ' <(getarrayfiles array2)  | sed 's,^, --tumor-segmentation ,' | tr -d '\\\n' ) """)
 // -ob-priors @var2@
   varsFiltered(patient)._filename("out1", patient + "_filteredVariants.vcf.gz")
@@ -317,7 +325,7 @@ for ( rowMap <- iterCSV(outBamArrayCSVmerged) ) {
 */
   varsPass(patient) = BashEvaluate(var1 = varsFiltered(patient).out1,
        var2 = targetsIL.out1,
-       script = s"$java8 -jar $gatk SelectVariants --exclude-filtered -L @var2@ -V @var1@ -O @out1@")
+       script = s"$java8 -jar $gatk SelectVariants --exclude-filtered -L @var2@ -ip 10 -V @var1@ -O @out1@")
   varsPass(patient)._filename("out1", patient + "_passed.vcf.gz")
 
   varsPassOut(patient) = varsPass(patient).out1
@@ -332,9 +340,14 @@ for ( rowMap <- iterCSV(outBamArrayCSVmerged) ) {
             protocol = "refGene,avsnp147,cosmic68,dbnsfp30a,icgc21",
             operation = "g,f,f,f,f")
 
+  varsAnnotFixed(patient) = BashEvaluate(var1 = varsAnnot(patient).vcfOut,
+       script = """
+              cat @var1@ | sed '/^[[:space:]]*$/d' > @out1@
+                """)
+  varsAnnotFixed(patient)._filename("out1", patient + "_annot.vcf")
 
   varsAnnotCSV(patient) = BashEvaluate(var1 = reference,
-            var2 = varsAnnot(patient).vcfOut,
+            var2 = varsAnnotFixed(patient).out1,
             param1 = gatk,
             param2 = java8,
             script = """ 
@@ -353,8 +366,8 @@ for ( rowMap <- iterCSV(outBamArrayCSVmerged) ) {
   varsAnnotCSVFixed(patient) = CSVDplyr(csv1 = varsAnnotCSV(patient).out1,
      script = """
               library(purrr)
-              RefCount <- function(AD)as.numeric(map_chr(strsplit(AD,","),1))
-              AltCount <- function(AD)as.numeric(map_chr(strsplit(AD,","),2))
+              RefCount <- function(AD)as.numeric(map_chr(strsplit(as.character(AD),","),1))
+              AltCount <- function(AD)as.numeric(map_chr(strsplit(as.character(AD),","),2))
               VAF <- function(AD)round(AltCount(AD)/(RefCount(AD) + AltCount(AD)),4)
               """,
      function1 = """mutate_if(is.character, function(x)gsub("\\\\x3b",";",gsub("\\\\x3d","=",x)))""",
@@ -377,11 +390,10 @@ val allVarsFixed = CSVDplyr(csv1 = allVars,
      function3 = """filter(!grepl(",",ALT))""")
 
 val allVarsFixedFilIndels = CSVDplyr(csv1 = allVarsFixed,
-     function1 = """mutate(maxVAF = pmax(FFPE.AD_VAF, ctDNA_0.AD_VAF, ctDNA_1.AD_VAF, ctDNA_2.AD_VAF, ctDNA_3.AD_VAF, na.rm=T),
-                           maxAlt = pmax(FFPE.AD_AltCount, ctDNA_0.AD_AltCount, ctDNA_1.AD_AltCount, ctDNA_2.AD_AltCount, ctDNA_3.AD_AltCount, na.rm=T), 
+     function1 = """mutate(maxVAF = pmax(FFPE.AD_VAF, ctDNA_0.AD_VAF,  na.rm=T),
+                           maxAlt = pmax(FFPE.AD_AltCount, ctDNA_0.AD_AltCount,  na.rm=T), 
                            Type = ifelse(nchar(REF) == 1 & nchar(ALT) == 1, "SNV", ifelse(nchar(REF) > 1 & nchar(ALT) > 1, "MNP", "INDEL")))""",
-     function2 = """filter(Type %in% c("SNV","MNP") | (maxVAF > 0.01 & maxAlt > 15))""",
-     function3 = """filter(!Patient %in% "CHIC_123" | ctDNA_2.AD_AltCount < 100)""")
+     function2 = """filter(Type %in% c("SNV","MNP") | (maxVAF > 0.01 & maxAlt > 15))""")
 
 val allVarsEasyFormat = CSVDplyr(csv1 = allVarsFixedFilIndels,
      function1 = """select(Patient, CHROM, POS, REF, ALT, Func.refGene, Gene.refGene,ExonicFunc.refGene, CONTQ, GERMQ, ROQ, MBQ, ECNT, MPOS, NALOD, SEQQ, ends_with("AD"))""")
