@@ -98,8 +98,7 @@ object ctdna{
   val complexOut = NamedMap[Any]("complexOut")
   val consensusRecal = NamedMap[BashEvaluate]("consensusRecal")
   val consensusRecal2 = NamedMap[BashEvaluate]("consensusRecal2")
-  val realigned = NamedMap[Realigner]("realined")
-  val realigned2 = NamedMap[Realigner]("realined2")
+  val realignedIndels = NamedMap[BashEvaluate]("realinedIndels")
   val groupedUmiOut = NamedMap[Any]("groupedUmiOut")
   val alignmentSummary = NamedMap[BashEvaluate]("alignmentSummary")
   val alignmentSummaryCombined = NamedMap[BashEvaluate]("alignmentSummaryCombined")
@@ -333,21 +332,20 @@ object ctdna{
     bamOut(Sample) = marked(Sample).out1
     bamCorrectedOut(Sample) = consensusRecal(Sample).out2
     bamCorrectedOut2(Sample) = consensusRecal2(Sample).out2
-/*
-    realigned(Sample) = Realigner(reference = reference,
-       bam1 = consensusRecal(Sample).out2,
-       intervals = targets,
-       indels1 = indelsGold,
-       gatk = gatk3)
-    realigned(Sample)._filename("realignedCase", Sample + "_realigned.bam")
 
-    realigned2(Sample) = Realigner(reference = reference,
-       bam1 = consensusRecal2(Sample).out2,
-       intervals = targets,
-       indels1 = indelsGold,
-       gatk = gatk3)
-    realigned2(Sample)._filename("realignedCase", Sample + "_realigned.bam")
-*/
+    realignedIndels(Sample) = BashEvaluate(var1 = reference,
+       var2 = consensusRecal(Sample).out2,
+       var3 = targetsIL.out1,
+       var4 = indelsGold,
+       param1 = gatk3,
+       param2 = java8,
+       script = """
+                @param2@ -jar @param1@ -T RealignerTargetCreator -R @var1@ -I @var2@ -o @out1@ -known @var4@ -L @var3@
+                @param2@ -jar @param1@ -T IndelRealigner -R @var1@ -I @var2@ -model "USE_READS" -targetIntervals @out1@ -o @out2@
+                """)
+    realignedIndels(Sample)._filename("out1", "targets.intervals")
+    realignedIndels(Sample)._filename("out2", Sample + "_consensusRecal.bam")
+
      alignmentSummary(Sample) = BashEvaluate(var1 = consensusRecal(Sample).out2,
        var2 = reference,
        var3 = targetsIL.out1,

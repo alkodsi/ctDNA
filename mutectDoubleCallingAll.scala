@@ -63,7 +63,7 @@ object ctdna{
        function2 = """filter(grepl("WB",Key))""",
        function3 = """select(KeyNormal = Key,Normal = File, Patient)""",
        function4 = """bind_rows(data.frame(KeyNormal = "ctDNA_ctrl_1", 
-                        Normal = "/mnt/storage2/work/amjad/ctdna/result_ctdnaAlignment6/consensusRecal_ctDNA_ctrl_1/ctDNA_ctrl_1_consensusRecal.bam",
+                        Normal = "/mnt/storage2/work/amjad/ctdna/result_ctDNAlign/consensusRecal_ctDNA_ctrl_1/ctDNA_ctrl_1_consensusRecal.bam",
                         Patient = "CHIC_138", stringsAsFactors=F))""")
   
   val listMatched = CSVDplyr(csv1=listTumors,
