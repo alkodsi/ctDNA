@@ -9,10 +9,10 @@ library(ggsci)
 #list <- read.table("/mnt/storage1/work/amjad/ctdna/result_ctdnaAlignment/bamOutCSV/out.csv", header = T, stringsAsFactors = F, sep= "\t")
 #oldVars <- read.table("/mnt/storage1/work/amjad/ctdna/oldVars.csv", header = T, stringsAsFactors = F, sep = "\t")
 #corrected <- read.table("/mnt/storage1/work/amjad/ctdna/result_ctdnaVariantsCorrected/varsAllFixed/out.csv", header = T, stringsAsFactors = F, sep = "\t")
-newMutect <- read.table("/mnt/storage2/work/amjad/ctdna/result_newMutectAll/allVarsFixedFilIndels/out.csv", header = T, stringsAsFactors = F, sep = "\t")
-newList <- read.table("/mnt/storage2/work/amjad/ctdna/result_newMutectAll/listMatched/out.csv", header = T, stringsAsFactors = F, sep = "\t")
-stats <- read.table("/mnt/storage2/work/amjad/ctdna/result_ctdnaAlignmentAll/stats/out.csv",header=T, stringsAsFactors = F, sep = "\t")
-dupStats <- read.table("/mnt/storage2/work/amjad/ctdna/result_ctdnaAlignmentAll/dupStats/out.csv",header=T, stringsAsFactors = F, sep = "\t")
+newMutect <- read.table("/mnt/storage2/work/amjad/ctdna/result_newMutectFinal/allVarsFixedFilIndels/out.csv", header = T, stringsAsFactors = F, sep = "\t")
+newList <- read.table("/mnt/storage2/work/amjad/ctdna/result_newMutectFinal/listMatched/out.csv", header = T, stringsAsFactors = F, sep = "\t")
+stats <- read.table("/mnt/storage2/work/amjad/ctdna/result_ctDNAlign/stats/out.csv",header=T, stringsAsFactors = F, sep = "\t")
+dupStats <- read.table("/mnt/storage2/work/amjad/ctdna/result_ctDNAlign/dupStats/out.csv",header=T, stringsAsFactors = F, sep = "\t")
 
 stats %>% 
   filter(!grepl("Normal", Sample)) %>%
@@ -152,10 +152,12 @@ ggsave(plot = relapseOverlap, filename = "/mnt/storage2/work/amjad/ctdna/plots/r
 ggsave(plot = baselineOverlap, filename = "/mnt/storage2/work/amjad/ctdna/plots/baselineOverlap.png")
 ggsave(plot = ffpeOverlap, filename = "/mnt/storage2/work/amjad/ctdna/plots/ffpeOverlap.png")
 
-withRelapse <- c("CHIC_136", "CHIC_52", "CHIC_97")
-ffpeBaseline <- c("CHIC_100","CHIC_12","CHIC_15","CHIC_16","CHIC_2","CHIC_27","CHIC_29","CHIC_35","CHIC_38",
-                  "CHIC_42","CHIC_49","CHIC_63","CHIC_70","CHIC_73","CHIC_88","CHIC_91","CHIC_92","CHIC_99",
-                  "CHIC_118","CHIC_28","CHIC_39","CHIC_61", "CHIC_123", "CHIC_4","CHIC_94")
+withRelapse <- c("CHIC_136", "CHIC_52", "CHIC_97", "CHIC_4")
+ffpeBaseline <- newList %>% 
+  group_by(Patient) %>% 
+  summarize(both = sum(ifelse(grepl("FFPE|_0$", KeyTumor), 1, 0 ))) %>% 
+  dplyr::filter(both > 1) %>% 
+  .$Patient
 
 baseLineRelapsePlots <- newMutect %>% 
     filter(Patient %in% c("CHIC_97","CHIC_136")) %>% 
